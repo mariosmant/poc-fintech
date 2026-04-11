@@ -1,0 +1,136 @@
+# ============================================================================
+# POC Fintech — Application Configuration
+# Spring Boot 4.0.5 | Java 25 | Jackson 3.x (tools.jackson) | NIST/SOG-IS/SOC 2 hardened
+# ============================================================================
+
+server:
+  port: 8080
+  # ── Server hardening (NIST SC-8, OWASP) ─────────────────────────────
+  error:
+    include-message: never            # Never expose error details (OWASP A09)
+    include-stacktrace: never         # Never expose stack traces
+    include-binding-errors: never     # Never expose validation internals
+  servlet:
+    session:
+      cookie:
+        http-only: true               # Prevent XSS cookie theft
+        secure: true                  # Cookies only over HTTPS
+
+spring:
+  application:
+    name: poc-fintech
+
+  # ── Jackson 3.x hardening (defence-in-depth — also configured in JacksonConfig bean) ─
+  # Note: In Jackson 3.x (tools.jackson), some features moved to new enums:
+  #   - WRITE_DATES_AS_TIMESTAMPS → DateTimeFeature (spring.jackson.datatype.datetime)
+  #   - FAIL_ON_NUMBERS_FOR_ENUMS → EnumFeature (spring.jackson.datatype.enum)
+  jackson:
+    default-property-inclusion: non_null   # Omit nulls — reduce info leakage
+    deserialization:
+      fail-on-unknown-properties: true     # Reject unknown fields (OWASP A01)
+      fail-on-reading-dup-tree-key: true   # Reject duplicate keys
+      fail-on-null-for-primitives: true    # Reject null for primitives
+    serialization:
+      fail-on-empty-beans: false           # Allow empty beans
+    datatype:
+      datetime:
+        write-dates-as-timestamps: false   # ISO-8601 dates (NIST SP 800-92)
+      enum:
+        fail-on-numbers-for-enums: true    # Reject numeric enum values
+
+  # ── Database (PostgreSQL) ───────────────────────────────────────────────
+  datasource:
+    url: jdbc:postgresql://localhost:5432/fintech
+    username: fintech
+    password: fintech
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 20000
+      leak-detection-threshold: 30000   # Detect connection leaks
+
+  # ── JPA / Hibernate ─────────────────────────────────────────────────────
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    open-in-view: false                 # Prevent lazy-loading in controllers (OSIV anti-pattern)
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        jdbc:
+          time_zone: UTC                # Consistent timezone handling
+
+  # ── Flyway ──────────────────────────────────────────────────────────────
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  # ── Kafka ───────────────────────────────────────────────────────────────
+  kafka:
+    bootstrap-servers: localhost:9092
+
+# ── Actuator / Observability ────────────────────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+  metrics:
+    tags:
+      application: poc-fintech
+  tracing:
+    sampling:
+      probability: 1.0
+  # OpenTelemetry export configuration
+  otlp:
+    tracing:
+      endpoint: http://localhost:4318/v1/traces
+
+# ── Springdoc / OpenAPI ──────────────────────────────────────────────────
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+# ── Resilience4j ─────────────────────────────────────────────────────────
+resilience4j:
+  circuitbreaker:
+    instances:
+      fraudDetection:
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        sliding-window-size: 10
+        permitted-number-of-calls-in-half-open-state: 3
+        register-health-indicator: true
+      fxRate:
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        sliding-window-size: 10
+        register-health-indicator: true
+  retry:
+    instances:
+      fraudDetection:
+        max-attempts: 3
+        wait-duration: 500ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+      fxRate:
+        max-attempts: 3
+        wait-duration: 500ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+
+# ── Logging ──────────────────────────────────────────────────────────────
+logging:
+  level:
+    com.mariosmant.fintech: DEBUG
+    org.springframework.kafka: WARN
+    org.hibernate.SQL: WARN
+

@@ -1,0 +1,13 @@
+# Prometheus scrape configuration for POC Fintech
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: 'poc-fintech'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8080']
+        labels:
+          application: 'poc-fintech'
+
