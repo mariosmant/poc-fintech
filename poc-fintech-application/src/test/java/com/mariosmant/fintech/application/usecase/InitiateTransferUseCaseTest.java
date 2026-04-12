@@ -116,6 +116,8 @@ class InitiateTransferUseCaseTest {
 
         assertThat(captor.getValue().getAggregateType()).isEqualTo("Transfer");
         assertThat(captor.getValue().getEventType()).isEqualTo("TransferInitiatedEvent");
+        assertThat(captor.getValue().getPayload()).contains("\"eventType\":\"TransferInitiatedEvent\"");
+        assertThat(captor.getValue().getPayload()).contains("\"transferId\":");
         assertThat(captor.getValue().isPublished()).isFalse();
     }
 }

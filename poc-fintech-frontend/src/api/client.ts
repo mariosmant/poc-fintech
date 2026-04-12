@@ -69,6 +69,9 @@ export const accountsApi = {
 
   /** Get account by ID. */
   getById: (id: string) => request<Account>(`/accounts/${id}`),
+
+  /** List all accounts ordered by most recent first. */
+  list: () => request<Account[]>('/accounts'),
 };
 
 // ── Transfers ─────────────────────────────────────────────────────────
@@ -83,6 +86,9 @@ export const transfersApi = {
 
   /** Get transfer by ID. */
   getById: (id: string) => request<Transfer>(`/transfers/${id}`),
+
+  /** List latest transfers for monitoring views. */
+  list: (limit = 50) => request<Transfer[]>(`/transfers?limit=${limit}`),
 };
 
 // ── Ledger ────────────────────────────────────────────────────────────
@@ -95,5 +101,8 @@ export const ledgerApi = {
   /** Get ledger entries by transfer ID. */
   getByTransfer: (transferId: string) =>
     request<LedgerEntry[]>(`/ledger/transfer/${transferId}`),
+
+  /** Get recent ledger entries for monitoring dashboards. */
+  recent: (limit = 100) => request<LedgerEntry[]>(`/ledger/recent?limit=${limit}`),
 };
 

@@ -4,6 +4,7 @@ import com.mariosmant.fintech.domain.model.Transfer;
 import com.mariosmant.fintech.domain.model.vo.IdempotencyKey;
 import com.mariosmant.fintech.domain.model.vo.TransferId;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -23,6 +24,14 @@ public interface TransferRepository {
      * @return the existing transfer, or empty
      */
     Optional<Transfer> findByIdempotencyKey(IdempotencyKey key);
+
+    /**
+     * Returns most recent transfers ordered by creation time descending.
+     *
+     * @param limit max number of transfers to return
+     * @return recent transfers
+     */
+    List<Transfer> findLatest(int limit);
 
     Transfer save(Transfer transfer);
 }

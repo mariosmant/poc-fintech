@@ -1,6 +1,7 @@
 package com.mariosmant.fintech.infrastructure.persistence.repository;
 
 import com.mariosmant.fintech.infrastructure.persistence.entity.TransferJpaEntity;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -18,5 +19,8 @@ public interface SpringDataTransferRepository extends JpaRepository<TransferJpaE
 
     /** Finds a transfer by idempotency key for duplicate detection. */
     Optional<TransferJpaEntity> findByIdempotencyKey(String idempotencyKey);
+
+    /** Returns recent transfers ordered by creation time descending. */
+    java.util.List<TransferJpaEntity> findAllByOrderByCreatedAtDesc(Pageable pageable);
 }
 

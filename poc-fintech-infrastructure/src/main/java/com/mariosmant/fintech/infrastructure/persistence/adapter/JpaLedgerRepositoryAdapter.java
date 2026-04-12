@@ -6,6 +6,7 @@ import com.mariosmant.fintech.domain.model.vo.TransferId;
 import com.mariosmant.fintech.domain.port.outbound.LedgerRepository;
 import com.mariosmant.fintech.infrastructure.persistence.mapper.LedgerEntryMapper;
 import com.mariosmant.fintech.infrastructure.persistence.repository.SpringDataLedgerRepository;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -45,6 +46,14 @@ public class JpaLedgerRepositoryAdapter implements LedgerRepository {
     @Transactional(readOnly = true)
     public List<LedgerEntry> findByAccountId(AccountId accountId) {
         return jpaRepo.findByAccountId(accountId.value())
+                .stream().map(LedgerEntryMapper::toDomain).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<LedgerEntry> findRecent(int limit) {
+        int boundedLimit = Math.max(1, Math.min(limit, 500));
+        return jpaRepo.findAllByOrderByCreatedAtDesc(PageRequest.of(0, boundedLimit))
                 .stream().map(LedgerEntryMapper::toDomain).toList();
     }
 }

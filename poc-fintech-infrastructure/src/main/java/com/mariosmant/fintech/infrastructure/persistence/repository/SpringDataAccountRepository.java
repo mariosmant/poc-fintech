@@ -14,5 +14,8 @@ import java.util.UUID;
  */
 @Repository
 public interface SpringDataAccountRepository extends JpaRepository<AccountJpaEntity, UUID> {
+
+	/** Returns all accounts ordered by creation time descending. */
+	java.util.List<AccountJpaEntity> findAllByOrderByCreatedAtDesc();
 }
 

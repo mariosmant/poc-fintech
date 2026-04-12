@@ -8,6 +8,7 @@ import com.mariosmant.fintech.infrastructure.persistence.repository.SpringDataAc
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -30,6 +31,13 @@ public class JpaAccountRepositoryAdapter implements AccountRepository {
     @Transactional(readOnly = true)
     public Optional<Account> findById(AccountId id) {
         return jpaRepo.findById(id.value()).map(AccountMapper::toDomain);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<Account> findAll() {
+        return jpaRepo.findAllByOrderByCreatedAtDesc()
+                .stream().map(AccountMapper::toDomain).toList();
     }
 
     @Override

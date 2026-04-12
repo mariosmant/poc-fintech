@@ -1,14 +1,14 @@
 import { useState, type FormEvent } from 'react';
-import { useCreateAccount } from '../../hooks/useApi';
+import { useAccountsList, useCreateAccount } from '../../hooks/useApi';
 import { ErrorMessage, Spinner } from '../../components/ui/Feedback';
 import { formatCurrency } from '../../utils/format';
-import type { Account, Currency } from '../../types/api';
+import type { Currency } from '../../types/api';
 
 const CURRENCIES: Currency[] = ['USD', 'EUR', 'GBP', 'JPY', 'CHF'];
 
 /** Accounts page — create accounts and view them. */
 export function AccountsPage() {
-  const [accounts, setAccounts] = useState<Account[]>([]);
+  const accountsQuery = useAccountsList();
   const createMutation = useCreateAccount();
 
   const [ownerName, setOwnerName] = useState('');
@@ -20,14 +20,15 @@ export function AccountsPage() {
     createMutation.mutate(
       { ownerName, currency, initialBalance: parseFloat(balance) },
       {
-        onSuccess: (account) => {
-          setAccounts((prev) => [account, ...prev]);
+        onSuccess: () => {
           setOwnerName('');
           setBalance('1000');
         },
       },
     );
   };
+
+  const accounts = accountsQuery.data ?? [];
 
   return (
     <div>
@@ -88,6 +89,10 @@ export function AccountsPage() {
         )}
       </div>
 
+      {accountsQuery.isError && !createMutation.isError && (
+        <div className="mb-3"><ErrorMessage message={accountsQuery.error.message} /></div>
+      )}
+
       {/* Accounts List */}
       {accounts.length > 0 && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
@@ -103,7 +108,7 @@ export function AccountsPage() {
             <tbody className="divide-y divide-gray-100">
               {accounts.map((a) => (
                 <tr key={a.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-3 font-mono text-xs text-gray-500">{a.id.slice(0, 8)}…</td>
+                  <td className="px-6 py-3 font-mono text-xs text-gray-500 break-all">{a.id}</td>
                   <td className="px-6 py-3 font-medium">{a.ownerName}</td>
                   <td className="px-6 py-3 text-right font-mono">{formatCurrency(a.balance, a.currency)}</td>
                   <td className="px-6 py-3">{a.currency}</td>

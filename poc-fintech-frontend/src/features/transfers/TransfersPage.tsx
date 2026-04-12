@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react';
-import { useInitiateTransfer, useTransfer } from '../../hooks/useApi';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useInitiateTransfer, useMonitoredTransfers, useTransfersList } from '../../hooks/useApi';
 import { ErrorMessage, Spinner } from '../../components/ui/Feedback';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { formatCurrency, generateIdempotencyKey } from '../../utils/format';
@@ -9,7 +9,8 @@ const CURRENCIES: Currency[] = ['USD', 'EUR', 'GBP', 'JPY', 'CHF'];
 
 /** Transfers page — initiate transfers and track their saga status. */
 export function TransfersPage() {
-  const [transfers, setTransfers] = useState<Transfer[]>([]);
+  const [transferIds, setTransferIds] = useState<string[]>([]);
+  const transfersListQuery = useTransfersList(50);
   const initiateMutation = useInitiateTransfer();
 
   // Form state
@@ -19,9 +20,44 @@ export function TransfersPage() {
   const [srcCurrency, setSrcCurrency] = useState<Currency>('USD');
   const [tgtCurrency, setTgtCurrency] = useState<Currency>('EUR');
 
-  // Polling for a specific transfer
-  const [pollingId, setPollingId] = useState('');
-  const pollingQuery = useTransfer(pollingId);
+  // Track selected transfer details while all rows are monitored in the background.
+  const [selectedTransferId, setSelectedTransferId] = useState('');
+  const monitoredTransferIds = useMemo(() => {
+    const latestIds = (transfersListQuery.data ?? []).map((transfer) => transfer.id);
+    const merged = [...transferIds];
+    for (const id of latestIds) {
+      if (!merged.includes(id)) {
+        merged.push(id);
+      }
+    }
+    return merged;
+  }, [transferIds, transfersListQuery.data]);
+
+  const monitoredQueries = useMonitoredTransfers(monitoredTransferIds);
+
+  const latestTransfersById = useMemo(
+    () => new Map((transfersListQuery.data ?? []).map((transfer) => [transfer.id, transfer])),
+    [transfersListQuery.data],
+  );
+
+  const transfers = useMemo(
+    () => monitoredTransferIds
+      .map((id, index) => monitoredQueries[index]?.data ?? latestTransfersById.get(id))
+      .filter((transfer): transfer is Transfer => !!transfer),
+    [latestTransfersById, monitoredQueries, monitoredTransferIds],
+  );
+
+  const selectedTransfer = useMemo(
+    () => transfers.find((transfer) => transfer.id === selectedTransferId),
+    [selectedTransferId, transfers],
+  );
+
+  useEffect(() => {
+    const firstTransfer = transfers[0];
+    if (!selectedTransferId && firstTransfer) {
+      setSelectedTransferId(firstTransfer.id);
+    }
+  }, [selectedTransferId, transfers]);
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -36,8 +72,8 @@ export function TransfersPage() {
       },
       {
         onSuccess: (transfer) => {
-          setTransfers((prev) => [transfer, ...prev]);
-          setPollingId(transfer.id);
+          setTransferIds((prev) => (prev.includes(transfer.id) ? prev : [transfer.id, ...prev]));
+          setSelectedTransferId(transfer.id);
         },
       },
     );
@@ -122,27 +158,34 @@ export function TransfersPage() {
         )}
       </div>
 
-      {/* Live Polling Status */}
-      {pollingQuery.data && (
+      {transfersListQuery.isError && !initiateMutation.isError && (
+        <div className="mb-3"><ErrorMessage message={transfersListQuery.error.message} /></div>
+      )}
+
+      {/* Live monitored status for the selected transfer */}
+      {selectedTransfer && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-          <h3 className="text-lg font-semibold mb-3">📡 Live Transfer Status</h3>
+          <h3 className="text-lg font-semibold mb-3">Live Transfer Status</h3>
           <div className="flex items-center gap-4">
-            <StatusBadge status={pollingQuery.data.status} />
-            <span className="text-sm text-gray-500 font-mono">{pollingQuery.data.id}</span>
-            {pollingQuery.data.exchangeRate && (
+            <StatusBadge status={selectedTransfer.status} />
+            <span className="text-sm text-gray-500 font-mono">{selectedTransfer.id}</span>
+            {selectedTransfer.exchangeRate && (
               <span className="text-sm text-gray-600">
-                FX Rate: {pollingQuery.data.exchangeRate.toFixed(6)}
+                FX Rate: {selectedTransfer.exchangeRate.toFixed(6)}
               </span>
             )}
-            {pollingQuery.data.targetAmount != null && (
+            {selectedTransfer.targetAmount != null && (
               <span className="text-sm font-medium">
-                → {formatCurrency(pollingQuery.data.targetAmount, pollingQuery.data.targetCurrency)}
+                to {formatCurrency(selectedTransfer.targetAmount, selectedTransfer.targetCurrency)}
               </span>
             )}
           </div>
-          {pollingQuery.data.failureReason && (
-            <p className="mt-2 text-sm text-red-600">Reason: {pollingQuery.data.failureReason}</p>
+          {selectedTransfer.failureReason && (
+            <p className="mt-2 text-sm text-red-600">Reason: {selectedTransfer.failureReason}</p>
           )}
+          <p className="mt-2 text-xs text-gray-500">
+            Active transfers auto-refresh every 2s until they reach a terminal state.
+          </p>
         </div>
       )}
 
@@ -164,9 +207,9 @@ export function TransfersPage() {
                 <tr
                   key={t.id}
                   className="hover:bg-gray-50 cursor-pointer"
-                  onClick={() => setPollingId(t.id)}
+                  onClick={() => setSelectedTransferId(t.id)}
                 >
-                  <td className="px-4 py-3 font-mono text-xs text-gray-500">{t.id.slice(0, 8)}…</td>
+                  <td className="px-4 py-3 font-mono text-xs text-gray-500 break-all">{t.id}</td>
                   <td className="px-4 py-3"><StatusBadge status={t.status} /></td>
                   <td className="px-4 py-3 text-right font-mono">
                     {formatCurrency(t.sourceAmount, t.sourceCurrency)}
@@ -175,7 +218,7 @@ export function TransfersPage() {
                     {t.sourceCurrency} → {t.targetCurrency}
                   </td>
                   <td className="px-4 py-3 font-mono text-xs text-gray-500">
-                    {t.sourceAccountId.slice(0, 8)}… → {t.targetAccountId.slice(0, 8)}…
+                    <div className="break-all">{t.sourceAccountId} → {t.targetAccountId}</div>
                   </td>
                 </tr>
               ))}
@@ -184,10 +227,10 @@ export function TransfersPage() {
         </div>
       )}
 
-      {transfers.length === 0 && !initiateMutation.isPending && (
+      {transfers.length === 0 && !initiateMutation.isPending && !transfersListQuery.isLoading && (
         <p className="text-gray-400 text-sm">No transfers yet. Create accounts first, then initiate a transfer.</p>
       )}
-      {initiateMutation.isPending && <Spinner className="mt-4" />}
+      {(initiateMutation.isPending || transfersListQuery.isLoading) && <Spinner className="mt-4" />}
     </div>
   );
 }

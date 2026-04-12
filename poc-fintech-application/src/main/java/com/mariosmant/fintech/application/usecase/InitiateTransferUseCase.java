@@ -4,6 +4,7 @@ import com.mariosmant.fintech.application.command.InitiateTransferCommand;
 import com.mariosmant.fintech.application.dto.TransferResponse;
 import com.mariosmant.fintech.application.outbox.OutboxEvent;
 import com.mariosmant.fintech.application.port.OutboxRepository;
+import com.mariosmant.fintech.application.serialization.EventPayloadSerializer;
 import com.mariosmant.fintech.domain.event.DomainEvent;
 import com.mariosmant.fintech.domain.exception.DuplicateTransferException;
 import com.mariosmant.fintech.domain.model.Transfer;
@@ -67,11 +68,11 @@ public class InitiateTransferUseCase {
                 idempotencyKey
         );
 
-        // Persist aggregate + outbox event in the same transaction
+        // Persist aggregate + outbox events in the same transaction boundary
         Transfer saved = transferRepository.save(transfer);
 
-        // Write domain events to the outbox
-        for (DomainEvent event : saved.getDomainEvents()) {
+        // Use original aggregate events (the remapped saved instance has no in-memory events).
+        for (DomainEvent event : transfer.getDomainEvents()) {
             var outboxEvent = OutboxEvent.create(
                     "Transfer",
                     saved.getId().toString(),
@@ -80,7 +81,7 @@ public class InitiateTransferUseCase {
             );
             outboxRepository.save(outboxEvent);
         }
-        saved.clearEvents();
+        transfer.clearEvents();
 
         log.info("Transfer initiated: id={}, source={}, target={}, amount={}",
                 saved.getId(), command.sourceAccountId(),
@@ -106,13 +107,10 @@ public class InitiateTransferUseCase {
     }
 
     /**
-     * Serializes a domain event to JSON string for the outbox payload.
-     * The infrastructure layer will provide the actual Jackson ObjectMapper.
-     * For now, we use a simple toString representation.
+     * Serializes a domain event as JSON for outbox/Kafka transport.
      */
     private String serializeEvent(DomainEvent event) {
-        // The infrastructure layer will override this via an EventSerializer component
-        return event.toString();
+        return EventPayloadSerializer.toJson(event);
     }
 }
 

@@ -35,6 +35,12 @@ public class LedgerQueryUseCase {
                 .stream().map(this::toResponse).toList();
     }
 
+    /** Returns recent ledger entries for monitoring dashboards. */
+    public List<LedgerEntryResponse> findRecent(int limit) {
+        return ledgerRepository.findRecent(limit)
+                .stream().map(this::toResponse).toList();
+    }
+
     private LedgerEntryResponse toResponse(LedgerEntry e) {
         return new LedgerEntryResponse(
                 e.getId().value(),

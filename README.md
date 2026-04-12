@@ -56,7 +56,8 @@
 | TailwindCSS | 3.4 |
 | React Query | 5 (TanStack) |
 | PostgreSQL | 16 |
-| Apache Kafka | 7.6 (Confluent, KRaft) |
+| Apache Kafka | 7.6+ (KRaft, no Confluent) |
+| Kafka UI | Latest |
 | Flyway | 11.14 |
 | Resilience4j | 2.3.0 |
 | Testcontainers | 2.x |
@@ -127,6 +128,7 @@ curl http://localhost:8080/api/v1/ledger/account/<account-uuid>
 
 - **Frontend**: http://localhost:5173
 - **Swagger UI**: http://localhost:8080/swagger-ui.html
+- **Kafka UI**: http://localhost:8080 (view topics, messages, consumer groups)
 - **Prometheus**: http://localhost:9090
 - **Grafana**: http://localhost:3000 (admin/admin)
 - **Actuator**: http://localhost:8080/actuator/health

@@ -6,9 +6,11 @@ import com.mariosmant.fintech.domain.model.vo.TransferId;
 import com.mariosmant.fintech.domain.port.outbound.TransferRepository;
 import com.mariosmant.fintech.infrastructure.persistence.mapper.TransferMapper;
 import com.mariosmant.fintech.infrastructure.persistence.repository.SpringDataTransferRepository;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -37,6 +39,14 @@ public class JpaTransferRepositoryAdapter implements TransferRepository {
     @Transactional(readOnly = true)
     public Optional<Transfer> findByIdempotencyKey(IdempotencyKey key) {
         return jpaRepo.findByIdempotencyKey(key.value()).map(TransferMapper::toDomain);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<Transfer> findLatest(int limit) {
+        int boundedLimit = Math.max(1, Math.min(limit, 200));
+        return jpaRepo.findAllByOrderByCreatedAtDesc(PageRequest.of(0, boundedLimit))
+                .stream().map(TransferMapper::toDomain).toList();
     }
 
     @Override

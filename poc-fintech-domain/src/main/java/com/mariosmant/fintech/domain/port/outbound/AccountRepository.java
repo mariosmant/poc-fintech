@@ -3,6 +3,7 @@ package com.mariosmant.fintech.domain.port.outbound;
 import com.mariosmant.fintech.domain.model.Account;
 import com.mariosmant.fintech.domain.model.vo.AccountId;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -23,6 +24,13 @@ public interface AccountRepository {
      * @return the account, or empty if not found
      */
     Optional<Account> findById(AccountId id);
+
+    /**
+     * Returns all accounts ordered by most recently created first.
+     *
+     * @return all accounts
+     */
+    List<Account> findAll();
 
     /**
      * Persists the given account (insert or update).

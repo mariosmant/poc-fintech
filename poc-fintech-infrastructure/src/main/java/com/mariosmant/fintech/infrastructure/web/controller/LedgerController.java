@@ -84,5 +84,15 @@ public class LedgerController {
             @PathVariable UUID transferId) {
         return ResponseEntity.ok(ledgerQueryUseCase.findByTransferId(transferId));
     }
+
+    /** Returns recent ledger entries for monitoring screens. */
+    @GetMapping("/recent")
+    @Operation(summary = "Get recent ledger entries",
+            description = "Returns latest ledger entries ordered by creation time descending.")
+    public ResponseEntity<List<LedgerEntryResponse>> getRecent(
+            @RequestParam(name = "limit", defaultValue = "100") int limit) {
+        int boundedLimit = Math.max(1, Math.min(limit, 500));
+        return ResponseEntity.ok(ledgerQueryUseCase.findRecent(boundedLimit));
+    }
 }
 

@@ -10,6 +10,7 @@ import com.mariosmant.fintech.domain.port.outbound.AccountRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -58,6 +59,11 @@ public class AccountUseCase {
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Account not found: " + accountId));
         return toResponse(account);
+    }
+
+    /** Returns all accounts ordered by most recent first. */
+    public List<AccountResponse> findAll() {
+        return accountRepository.findAll().stream().map(this::toResponse).toList();
     }
 
     private AccountResponse toResponse(Account a) {

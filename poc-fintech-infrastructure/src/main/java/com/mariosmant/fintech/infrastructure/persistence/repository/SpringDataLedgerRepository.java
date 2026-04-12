@@ -1,6 +1,7 @@
 package com.mariosmant.fintech.infrastructure.persistence.repository;
 
 import com.mariosmant.fintech.infrastructure.persistence.entity.LedgerEntryJpaEntity;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
@@ -21,5 +22,7 @@ public interface SpringDataLedgerRepository extends JpaRepository<LedgerEntryJpa
 
     @Query("SELECT e FROM LedgerEntryJpaEntity e WHERE e.debitAccountId = :accountId OR e.creditAccountId = :accountId ORDER BY e.createdAt DESC")
     List<LedgerEntryJpaEntity> findByAccountId(UUID accountId);
+
+    List<LedgerEntryJpaEntity> findAllByOrderByCreatedAtDesc(Pageable pageable);
 }
 

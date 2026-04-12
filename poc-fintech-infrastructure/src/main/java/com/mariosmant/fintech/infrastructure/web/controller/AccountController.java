@@ -17,6 +17,7 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -81,6 +82,18 @@ public class AccountController {
                     example = "550e8400-e29b-41d4-a716-446655440000")
             @PathVariable UUID id) {
         return ResponseEntity.ok(accountUseCase.findById(id));
+    }
+
+    /** Returns all accounts ordered by creation date descending. */
+    @GetMapping
+    @Operation(summary = "List accounts",
+            description = "Returns all accounts ordered by most recent first for monitoring dashboards.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Accounts retrieved",
+                    content = @Content(schema = @Schema(implementation = AccountResponse.class)))
+    })
+    public ResponseEntity<List<AccountResponse>> listAccounts() {
+        return ResponseEntity.ok(accountUseCase.findAll());
     }
 }
 

@@ -54,13 +54,13 @@ export function DashboardPage() {
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <h3 className="text-lg font-semibold mb-3">🔧 Tech Stack</h3>
           <ul className="space-y-2 text-sm text-gray-600">
-            <li>☕ Java 21 + Spring Boot 3.4</li>
+            <li>☕ Java 25 + Spring Boot 4.0.5</li>
             <li>⚛️ React 19 + TypeScript + Vite</li>
             <li>🐘 PostgreSQL 16 + Flyway</li>
-            <li>📨 Apache Kafka (KRaft mode)</li>
+            <li>📨 Apache Kafka 7.6 (KRaft mode)</li>
             <li>🛡️ Resilience4j — Circuit Breaker + Retry</li>
             <li>📊 Micrometer + Prometheus + Grafana</li>
-            <li>📖 OpenAPI / Swagger UI</li>
+            <li>📖 OpenAPI / Swagger UI + Kafka UI</li>
             <li>🧪 Testcontainers + JUnit 5 + Vitest</li>
           </ul>
         </div>

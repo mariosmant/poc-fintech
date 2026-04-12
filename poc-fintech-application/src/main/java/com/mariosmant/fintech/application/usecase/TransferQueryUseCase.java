@@ -5,6 +5,7 @@ import com.mariosmant.fintech.domain.model.Transfer;
 import com.mariosmant.fintech.domain.model.vo.TransferId;
 import com.mariosmant.fintech.domain.port.outbound.TransferRepository;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -33,6 +34,11 @@ public class TransferQueryUseCase {
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Transfer not found: " + transferId));
         return toResponse(t);
+    }
+
+    /** Returns the latest transfers for monitoring screens. */
+    public List<TransferResponse> findLatest(int limit) {
+        return transferRepository.findLatest(limit).stream().map(this::toResponse).toList();
     }
 
     private TransferResponse toResponse(Transfer t) {

@@ -1,6 +1,6 @@
 # ============================================================================
 # POC Fintech — Docker Compose
-# Services: PostgreSQL, Kafka (KRaft mode), Schema Registry, Prometheus, Grafana
+# Services: PostgreSQL, Kafka (KRaft mode, Apache), Kafka UI, Prometheus, Grafana
 # ============================================================================
 
 services:
@@ -23,43 +23,45 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── Kafka (KRaft mode — no Zookeeper) ──────────────────────────────────
+  # ── Kafka (KRaft mode — Apache Kafka, no Zookeeper, no Confluent) ──────
   kafka:
-    image: confluentinc/cp-kafka:7.6.0
+    image: apache/kafka:latest
     container_name: fintech-kafka
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:29093,PLAINTEXT_HOST://0.0.0.0:29092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,CONTROLLER://0.0.0.0:29093,EXTERNAL://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
     ports:
-      - "9092:29092"
+      - "9092:9092"
+      - "9093:9093"
     healthcheck:
-      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list"]
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list > /dev/null 2>&1"]
       interval: 10s
       timeout: 10s
-      retries: 5
+      retries: 8
+      start_period: 25s
 
-  # ── Schema Registry ─────────────────────────────────────────────────────
-  schema-registry:
-    image: confluentinc/cp-schema-registry:7.6.0
-    container_name: fintech-schema-registry
+  # ── Kafka UI ────────────────────────────────────────────────────────────
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: fintech-kafka-ui
     depends_on:
       kafka:
         condition: service_healthy
     environment:
-      SCHEMA_REGISTRY_HOST_NAME: schema-registry
-      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_NAME: fintech
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
     ports:
-      - "8081:8081"
+      - "8081:8080"
 
   # ── Prometheus ──────────────────────────────────────────────────────────
   prometheus:
@@ -87,4 +89,3 @@ services:
 
 volumes:
   postgres_data:
-

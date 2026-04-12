@@ -18,6 +18,7 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -99,6 +100,21 @@ public class TransferController {
                     example = "550e8400-e29b-41d4-a716-446655440000")
             @PathVariable UUID id) {
         return ResponseEntity.ok(transferQueryUseCase.findById(id));
+    }
+
+    /** Returns latest transfers for monitoring pages. */
+    @GetMapping
+    @Operation(summary = "List latest transfers",
+            description = "Returns latest transfers ordered by most recent first."
+                    + " Intended for monitoring screens.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Transfers retrieved",
+                    content = @Content(schema = @Schema(implementation = TransferResponse.class)))
+    })
+    public ResponseEntity<List<TransferResponse>> listTransfers(
+            @RequestParam(name = "limit", defaultValue = "50") int limit) {
+        int boundedLimit = Math.max(1, Math.min(limit, 200));
+        return ResponseEntity.ok(transferQueryUseCase.findLatest(boundedLimit));
     }
 }
 

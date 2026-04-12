@@ -6,16 +6,19 @@ import { App } from './App';
 import './index.css';
 
 /**
- * React Query client with sensible production defaults:
- * - staleTime: 30s (avoids unnecessary refetches)
- * - retry: 1 (quick feedback on failures)
+ * React Query client with production-oriented defaults.
+ *
+ * Short staleness keeps monitoring screens fresh, while reconnect/focus
+ * refetch handles laptop sleep/resume and network drops gracefully.
  */
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 30_000,
-      retry: 1,
-      refetchOnWindowFocus: false,
+      staleTime: 5_000,
+      gcTime: 5 * 60_000,
+      retry: 2,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
     },
   },
 });

@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Outbox Polling Publisher — polls unpublished events from the outbox table
@@ -59,7 +60,9 @@ public class OutboxPollingPublisher {
         for (OutboxEvent event : events) {
             try {
                 // Use aggregateId as Kafka key for partition-level ordering
-                kafkaTemplate.send(TOPIC, event.getAggregateId(), event.getPayload());
+                // Wait for broker acknowledgment before marking as published.
+                kafkaTemplate.send(TOPIC, event.getAggregateId(), event.getPayload())
+                        .get(10, TimeUnit.SECONDS);
                 outboxRepository.markPublished(event.getId());
                 log.debug("Published outbox event: id={}, type={}", event.getId(), event.getEventType());
             } catch (Exception ex) {
@@ -70,4 +73,3 @@ public class OutboxPollingPublisher {
         }
     }
 }
-

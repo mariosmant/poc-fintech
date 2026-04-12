@@ -2,6 +2,7 @@ package com.mariosmant.fintech.application.saga;
 
 import com.mariosmant.fintech.application.outbox.OutboxEvent;
 import com.mariosmant.fintech.application.port.OutboxRepository;
+import com.mariosmant.fintech.application.serialization.EventPayloadSerializer;
 import com.mariosmant.fintech.domain.event.*;
 import com.mariosmant.fintech.domain.model.Account;
 import com.mariosmant.fintech.domain.model.LedgerEntry;
@@ -277,7 +278,7 @@ public class TransferSagaOrchestrator {
                     aggregate.getClass().getSimpleName(),
                     evt.aggregateId(),
                     evt.getClass().getSimpleName(),
-                    evt.toString()
+                    EventPayloadSerializer.toJson(evt)
             ));
         }
         aggregate.clearEvents();
