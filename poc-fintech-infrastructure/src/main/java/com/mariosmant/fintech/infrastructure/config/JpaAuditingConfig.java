@@ -1,5 +1,6 @@
 package com.mariosmant.fintech.infrastructure.config;
 
+import com.mariosmant.fintech.infrastructure.security.SecurityContextUtil;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.domain.AuditorAware;
@@ -20,13 +21,20 @@ public class JpaAuditingConfig {
 
     /**
      * Provides the current auditor (user) for {@code @CreatedBy} / {@code @LastModifiedBy}.
-     * In production, this would return the authenticated principal from the security context.
+     * Extracts the authenticated principal from the security context (JWT sub claim).
+     * Falls back to "system" for non-authenticated contexts (e.g., scheduled tasks, migrations).
      *
      * @return the auditor provider
      */
     @Bean
     public AuditorAware<String> auditorProvider() {
-        return () -> Optional.of("system");
+        return () -> {
+            try {
+                return Optional.of(SecurityContextUtil.getAuthenticatedUserId());
+            } catch (IllegalStateException e) {
+                return Optional.of("system");
+            }
+        };
     }
 }
 

@@ -12,6 +12,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import com.mariosmant.fintech.testcontainers.TestSecurityConfig;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -35,7 +36,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @EnabledIfDockerAvailable
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import(TestcontainersConfig.class)
+@Import({TestcontainersConfig.class, TestSecurityConfig.class})
 @ActiveProfiles("test")
 class TransferIntegrationTest {
 
@@ -48,6 +49,7 @@ class TransferIntegrationTest {
     void setUp() {
         restClient = RestClient.builder()
                 .baseUrl("http://localhost:" + port)
+                .defaultHeader("Authorization", "Bearer test-integration-token")
                 .build();
     }
 
@@ -55,7 +57,7 @@ class TransferIntegrationTest {
     @DisplayName("Should create accounts and initiate a transfer")
     void shouldCreateAccountsAndTransfer() {
         // Create source account with balance
-        var sourceReq = new CreateAccountRequest("Alice", "USD", new BigDecimal("5000.00"));
+        var sourceReq = new CreateAccountRequest("USD", new BigDecimal("5000.00"));
         ResponseEntity<AccountResponse> sourceResp = restClient.post()
                 .uri("/api/v1/accounts")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -67,7 +69,7 @@ class TransferIntegrationTest {
         UUID sourceId = sourceResp.getBody().id();
 
         // Create target account
-        var targetReq = new CreateAccountRequest("Bob", "EUR", new BigDecimal("1000.00"));
+        var targetReq = new CreateAccountRequest("EUR", new BigDecimal("1000.00"));
         ResponseEntity<AccountResponse> targetResp = restClient.post()
                 .uri("/api/v1/accounts")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -79,7 +81,7 @@ class TransferIntegrationTest {
 
         // Initiate transfer
         var transferReq = new InitiateTransferRequest(
-                sourceId, targetId,
+                sourceId, targetId, null,
                 new BigDecimal("500.00"),
                 Currency.USD, Currency.EUR,
                 "integration-test-key-" + UUID.randomUUID()
@@ -109,14 +111,14 @@ class TransferIntegrationTest {
     @DisplayName("Should return existing transfer on duplicate idempotency key")
     void shouldReturnExistingOnDuplicateKey() {
         // Create accounts
-        var sourceReq = new CreateAccountRequest("Carol", "USD", new BigDecimal("3000.00"));
+        var sourceReq = new CreateAccountRequest("USD", new BigDecimal("3000.00"));
         AccountResponse source = restClient.post()
                 .uri("/api/v1/accounts")
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(sourceReq)
                 .retrieve()
                 .body(AccountResponse.class);
-        var targetReq = new CreateAccountRequest("Dave", "USD", new BigDecimal("0.00"));
+        var targetReq = new CreateAccountRequest("USD", new BigDecimal("0.00"));
         AccountResponse target = restClient.post()
                 .uri("/api/v1/accounts")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -126,7 +128,7 @@ class TransferIntegrationTest {
 
         String idempotencyKey = "dup-test-key-" + UUID.randomUUID();
         var transferReq = new InitiateTransferRequest(
-                source.id(), target.id(),
+                source.id(), target.id(), null,
                 new BigDecimal("100.00"),
                 Currency.USD, Currency.USD,
                 idempotencyKey

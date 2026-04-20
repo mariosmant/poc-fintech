@@ -4,13 +4,35 @@ import com.mariosmant.fintech.domain.event.*;
 
 /**
  * Serializes domain events to a stable JSON envelope for outbox/Kafka transport.
+ *
+ * <p><b>Design decision:</b> Hand-rolled JSON serialization instead of Jackson to
+ * keep the application layer free of infrastructure dependencies. The outbox payload
+ * is a simple flat JSON object — no nested structures requiring a full JSON library.</p>
+ *
+ * <p>Each event is serialized with a common envelope ({@code eventType}, {@code eventId},
+ * {@code aggregateId}, {@code occurredAt}) plus event-specific fields. The consumer
+ * ({@link com.mariosmant.fintech.domain.event.DomainEvent}) uses Jackson for deserialization
+ * since it runs in the infrastructure layer where Jackson is available.</p>
+ *
+ * @author mariosmant
+ * @since 1.0.0
  */
 public final class EventPayloadSerializer {
 
     private EventPayloadSerializer() {
-        // utility class
+        // utility class — prevent instantiation
     }
 
+    /**
+     * Serializes a domain event into a JSON string for outbox/Kafka transport.
+     *
+     * <p>Produces a flat JSON object with a common envelope (eventType, eventId,
+     * aggregateId, occurredAt) followed by event-specific fields determined by
+     * the sealed interface pattern match.</p>
+     *
+     * @param event the domain event to serialize; must not be {@code null}
+     * @return a JSON string representation of the event
+     */
     public static String toJson(DomainEvent event) {
         StringBuilder sb = new StringBuilder(512);
         sb.append('{');
@@ -103,19 +125,37 @@ public final class EventPayloadSerializer {
         return sb.toString();
     }
 
+    /**
+     * Writes a JSON string field: {@code "key":"value"}.
+     * Both key and value are escaped to prevent JSON injection.
+     */
     private static void writeString(StringBuilder sb, String key, String value) {
         sb.append('"').append(escape(key)).append('"').append(':')
                 .append('"').append(escape(value)).append('"');
     }
 
+    /**
+     * Writes a JSON numeric field: {@code "key":value}.
+     * The value is written unquoted (raw number).
+     */
     private static void writeNumber(StringBuilder sb, String key, String value) {
         sb.append('"').append(escape(key)).append('"').append(':').append(value);
     }
 
+    /**
+     * Writes a JSON boolean field: {@code "key":true|false}.
+     */
     private static void writeBoolean(StringBuilder sb, String key, boolean value) {
         sb.append('"').append(escape(key)).append('"').append(':').append(value);
     }
 
+    /**
+     * Escapes special characters in JSON strings to prevent injection.
+     * Handles: backslash, double-quote, newline, carriage return.
+     *
+     * @param value the raw string to escape
+     * @return the JSON-safe escaped string
+     */
     private static String escape(String value) {
         return value
                 .replace("\\", "\\\\")
@@ -124,4 +164,3 @@ public final class EventPayloadSerializer {
                 .replace("\r", "\\r");
     }
 }
-

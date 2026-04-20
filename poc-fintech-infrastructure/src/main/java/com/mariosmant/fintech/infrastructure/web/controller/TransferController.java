@@ -4,6 +4,8 @@ import com.mariosmant.fintech.application.command.InitiateTransferCommand;
 import com.mariosmant.fintech.application.dto.TransferResponse;
 import com.mariosmant.fintech.application.usecase.InitiateTransferUseCase;
 import com.mariosmant.fintech.application.usecase.TransferQueryUseCase;
+import com.mariosmant.fintech.infrastructure.security.SecurityContextUtil;
+import com.mariosmant.fintech.infrastructure.security.audit.Audited;
 import com.mariosmant.fintech.infrastructure.web.dto.InitiateTransferRequest;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -11,21 +13,26 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.UUID;
 
 /**
  * REST controller for money transfer operations.
- *
- * <p>Exposes the CQRS write (POST) and read (GET) endpoints for transfers.
- * All endpoints are documented via OpenAPI 3.x annotations for Swagger UI.</p>
+ * All endpoints require OAuth2 authentication. Initiator is set from JWT.
  *
  * @author mariosmant
  * @since 1.0.0
@@ -33,6 +40,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/transfers")
 @Tag(name = "Transfers", description = "Money transfer operations — CQRS command & query endpoints")
+@SecurityRequirement(name = "bearer-jwt")
 public class TransferController {
 
     private final InitiateTransferUseCase initiateTransferUseCase;
@@ -46,20 +54,20 @@ public class TransferController {
 
     /**
      * Initiates a new money transfer.
-     *
-     * @param request the transfer request body
-     * @return the created transfer details
+     * Initiator is set to the authenticated user — never from client input.
      */
     @PostMapping
+    @Audited(action = "INITIATE_TRANSFER", resourceType = "Transfer")
     @Operation(summary = "Initiate a money transfer",
             description = "Creates a new transfer. Uses idempotency key for exactly-once semantics. "
-                    + "Triggers the Saga orchestrator for multi-step processing including fraud check, "
-                    + "FX conversion, and double-entry ledger posting.")
+                    + "Initiator is set from authenticated user's JWT. "
+                    + "Triggers the Saga orchestrator for multi-step processing.")
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "Transfer initiated successfully",
                     content = @Content(schema = @Schema(implementation = TransferResponse.class))),
             @ApiResponse(responseCode = "400", description = "Validation error — invalid request body",
                     content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
+            @ApiResponse(responseCode = "401", description = "Unauthorized — missing or invalid JWT"),
             @ApiResponse(responseCode = "409", description = "Duplicate transfer — idempotency key already used",
                     content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
             @ApiResponse(responseCode = "422", description = "Fraud detected — transaction rejected",
@@ -67,13 +75,17 @@ public class TransferController {
     })
     public ResponseEntity<TransferResponse> initiateTransfer(
             @Valid @RequestBody InitiateTransferRequest request) {
+        // User ID from JWT — never trust client-supplied initiator (NIST IA-2)
+        String userId = SecurityContextUtil.getAuthenticatedUserId();
         var command = new InitiateTransferCommand(
                 request.sourceAccountId(),
                 request.targetAccountId(),
+                request.targetIban(),
                 request.amount(),
                 request.sourceCurrency(),
                 request.targetCurrency(),
-                request.idempotencyKey()
+                request.idempotencyKey(),
+                userId
         );
         TransferResponse response = initiateTransferUseCase.handle(command);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
@@ -87,8 +99,7 @@ public class TransferController {
      */
     @GetMapping("/{id}")
     @Operation(summary = "Get transfer by ID",
-            description = "Retrieves the current status and details of a transfer, "
-                    + "including FX conversion details and saga progression.")
+            description = "Retrieves the current status and details of a transfer.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Transfer found",
                     content = @Content(schema = @Schema(implementation = TransferResponse.class))),
@@ -105,8 +116,7 @@ public class TransferController {
     /** Returns latest transfers for monitoring pages. */
     @GetMapping
     @Operation(summary = "List latest transfers",
-            description = "Returns latest transfers ordered by most recent first."
-                    + " Intended for monitoring screens.")
+            description = "Returns latest transfers ordered by most recent first.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Transfers retrieved",
                     content = @Content(schema = @Schema(implementation = TransferResponse.class)))

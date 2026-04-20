@@ -7,6 +7,7 @@ import com.mariosmant.fintech.domain.model.vo.AccountId;
 import com.mariosmant.fintech.domain.model.vo.Currency;
 import com.mariosmant.fintech.domain.model.vo.Money;
 import com.mariosmant.fintech.domain.model.vo.TransferId;
+import com.mariosmant.fintech.domain.util.IbanUtil;
 
 import java.time.Instant;
 import java.util.Objects;
@@ -28,6 +29,7 @@ import java.util.UUID;
 public class Account extends AggregateRoot {
 
     private final AccountId id;
+    private final String iban;
     private final String ownerName;
     private Money balance;
     private int version;
@@ -36,12 +38,14 @@ public class Account extends AggregateRoot {
      * Reconstitution constructor used by the persistence layer.
      *
      * @param id        the account identifier
+     * @param iban      the account's IBAN (ISO 13616, mod-97 valid)
      * @param ownerName the account owner's name
      * @param balance   the current balance
      * @param version   the optimistic-lock version
      */
-    public Account(AccountId id, String ownerName, Money balance, int version) {
+    public Account(AccountId id, String iban, String ownerName, Money balance, int version) {
         this.id = Objects.requireNonNull(id, "Account ID must not be null");
+        this.iban = Objects.requireNonNull(iban, "IBAN must not be null");
         this.ownerName = Objects.requireNonNull(ownerName, "Owner name must not be null");
         this.balance = Objects.requireNonNull(balance, "Balance must not be null");
         this.version = version;
@@ -49,24 +53,20 @@ public class Account extends AggregateRoot {
 
     /**
      * Factory: creates a new account with zero balance in the given currency.
-     *
-     * @param ownerName the account owner's name
-     * @param currency  the account's currency
-     * @return a new {@code Account}
+     * IBAN is deterministically generated from the new account UUID.
      */
     public static Account create(String ownerName, Currency currency) {
-        return new Account(AccountId.generate(), ownerName, Money.zero(currency), 0);
+        AccountId newId = AccountId.generate();
+        return new Account(newId, IbanUtil.generate(newId.value()), ownerName, Money.zero(currency), 0);
     }
 
     /**
      * Factory: creates a new account with a specified initial balance.
-     *
-     * @param ownerName      the account owner's name
-     * @param initialBalance the starting balance
-     * @return a new {@code Account}
+     * IBAN is deterministically generated from the new account UUID.
      */
     public static Account createWithBalance(String ownerName, Money initialBalance) {
-        return new Account(AccountId.generate(), ownerName, initialBalance, 0);
+        AccountId newId = AccountId.generate();
+        return new Account(newId, IbanUtil.generate(newId.value()), ownerName, initialBalance, 0);
     }
 
     /**
@@ -128,6 +128,7 @@ public class Account extends AggregateRoot {
     // ── Getters ──────────────────────────────────────────────────────────
 
     public AccountId getId() { return id; }
+    public String getIban() { return iban; }
     public String getOwnerName() { return ownerName; }
     public Money getBalance() { return balance; }
     public int getVersion() { return version; }

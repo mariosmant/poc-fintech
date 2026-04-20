@@ -4,29 +4,36 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.*;
+import org.springframework.kafka.listener.CommonErrorHandler;
 import org.springframework.kafka.listener.ContainerProperties;
+import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
+import org.springframework.kafka.listener.DefaultErrorHandler;
+import org.springframework.util.backoff.ExponentialBackOff;
 
 import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Kafka producer and consumer configuration.
+ * Kafka producer and consumer configuration with DLQ and retry.
  *
- * <p>Producer is configured for idempotent delivery ({@code enable.idempotence=true},
- * {@code acks=all}) per Kafka exactly-once best practices.
- * Consumer uses manual acknowledgment for exactly-once processing
- * combined with the idempotency check in the saga consumer.</p>
+ * <p>Producer: idempotent delivery ({@code enable.idempotence=true}, {@code acks=all}).
+ * Consumer: manual acknowledgment + exponential backoff retry + Dead Letter Topic (DLT)
+ * after max retries exhausted.</p>
  *
  * @author mariosmant
  * @since 1.0.0
  */
 @Configuration
 public class KafkaConfig {
+
+    private static final Logger log = LoggerFactory.getLogger(KafkaConfig.class);
 
     @Value("${spring.kafka.bootstrap-servers:localhost:9092}")
     private String bootstrapServers;
@@ -41,6 +48,8 @@ public class KafkaConfig {
         props.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, true);
         props.put(ProducerConfig.ACKS_CONFIG, "all");
         props.put(ProducerConfig.RETRIES_CONFIG, 3);
+        // Limit in-flight requests for ordering guarantees
+        props.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, 1);
         return new DefaultKafkaProducerFactory<>(props);
     }
 
@@ -63,14 +72,48 @@ public class KafkaConfig {
         return new DefaultKafkaConsumerFactory<>(props);
     }
 
+    /**
+     * Dead Letter Publishing Recoverer — sends failed messages to {topic}.DLT
+     * after all retry attempts are exhausted.
+     */
     @Bean
-    public ConcurrentKafkaListenerContainerFactory<String, String> kafkaListenerContainerFactory() {
+    public DeadLetterPublishingRecoverer deadLetterPublishingRecoverer(
+            KafkaTemplate<String, String> kafkaTemplate) {
+        return new DeadLetterPublishingRecoverer(kafkaTemplate);
+    }
+
+    /**
+     * Error handler with exponential backoff retry and DLQ routing.
+     * Retries up to 5 times with 1s initial interval, 2x multiplier, max 10s.
+     */
+    @Bean
+    public CommonErrorHandler kafkaErrorHandler(
+            DeadLetterPublishingRecoverer deadLetterPublishingRecoverer) {
+        ExponentialBackOff backOff = new ExponentialBackOff(1000L, 2.0);
+        backOff.setMaxInterval(10_000L);
+        backOff.setMaxElapsedTime(30_000L); // ~5 retries
+
+        DefaultErrorHandler errorHandler = new DefaultErrorHandler(
+                deadLetterPublishingRecoverer, backOff);
+
+        // Log each retry attempt
+        errorHandler.setRetryListeners((record, ex, deliveryAttempt) ->
+                log.warn("Kafka retry attempt {} for topic={}, partition={}, offset={}",
+                        deliveryAttempt, record.topic(), record.partition(), record.offset()));
+
+        return errorHandler;
+    }
+
+    @Bean
+    public ConcurrentKafkaListenerContainerFactory<String, String> kafkaListenerContainerFactory(
+            CommonErrorHandler kafkaErrorHandler) {
         ConcurrentKafkaListenerContainerFactory<String, String> factory =
                 new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(consumerFactory());
         // Manual acknowledgment for exactly-once processing
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL_IMMEDIATE);
+        // Attach DLQ error handler with retry
+        factory.setCommonErrorHandler(kafkaErrorHandler);
         return factory;
     }
 }
-

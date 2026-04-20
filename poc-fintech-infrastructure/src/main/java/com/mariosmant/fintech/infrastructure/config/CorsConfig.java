@@ -3,6 +3,7 @@ package com.mariosmant.fintech.infrastructure.config;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -27,6 +28,7 @@ import java.util.List;
  * @since 1.0.0
  */
 @Configuration
+@Profile("!test")
 public class CorsConfig {
 
     @Value("${app.cors.allowed-origins:http://localhost:5173}")
@@ -51,7 +53,8 @@ public class CorsConfig {
         ));
         config.setExposedHeaders(List.of(
                 "X-Request-ID",
-                "X-RateLimit-Remaining"
+                "X-RateLimit-Remaining",
+                "Authorization"
         ));
         config.setAllowCredentials(true);
         config.setMaxAge(3600L); // Cache preflight for 1 hour

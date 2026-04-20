@@ -53,6 +53,9 @@ public class TransferJpaEntity {
     @Column(name = "idempotency_key", nullable = false, unique = true)
     private String idempotencyKey;
 
+    @Column(name = "initiated_by")
+    private String initiatedBy;
+
     @Column(name = "failure_reason")
     private String failureReason;
 
@@ -94,6 +97,8 @@ public class TransferJpaEntity {
     public void setStatus(String status) { this.status = status; }
     public String getIdempotencyKey() { return idempotencyKey; }
     public void setIdempotencyKey(String idempotencyKey) { this.idempotencyKey = idempotencyKey; }
+    public String getInitiatedBy() { return initiatedBy; }
+    public void setInitiatedBy(String initiatedBy) { this.initiatedBy = initiatedBy; }
     public String getFailureReason() { return failureReason; }
     public void setFailureReason(String failureReason) { this.failureReason = failureReason; }
     public int getVersion() { return version; }
@@ -101,5 +106,4 @@ public class TransferJpaEntity {
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 }
-
 

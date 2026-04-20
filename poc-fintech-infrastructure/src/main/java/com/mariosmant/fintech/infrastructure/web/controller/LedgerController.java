@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -19,9 +20,7 @@ import java.util.UUID;
 
 /**
  * REST controller for double-entry ledger queries.
- *
- * <p>Provides read-only endpoints for querying the immutable ledger.
- * All endpoints are documented via OpenAPI 3.x annotations for Swagger UI.</p>
+ * All endpoints require OAuth2 authentication.
  *
  * @author mariosmant
  * @since 1.0.0
@@ -29,6 +28,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/ledger")
 @Tag(name = "Ledger", description = "Double-entry accounting ledger queries — immutable audit trail")
+@SecurityRequirement(name = "bearer-jwt")
 public class LedgerController {
 
     private final LedgerQueryUseCase ledgerQueryUseCase;

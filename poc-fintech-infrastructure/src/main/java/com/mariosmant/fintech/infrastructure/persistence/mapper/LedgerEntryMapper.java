@@ -14,6 +14,12 @@ public final class LedgerEntryMapper {
 
     private LedgerEntryMapper() { /* utility */ }
 
+    /**
+     * Converts a JPA entity to a domain model.
+     *
+     * @param e the JPA entity
+     * @return the domain {@code LedgerEntry}
+     */
     public static LedgerEntry toDomain(LedgerEntryJpaEntity e) {
         return new LedgerEntry(
                 new LedgerEntryId(e.getId()),
@@ -25,6 +31,12 @@ public final class LedgerEntryMapper {
         );
     }
 
+    /**
+     * Converts a domain model to a JPA entity for persistence.
+     *
+     * @param l the domain ledger entry
+     * @return the JPA entity
+     */
     public static LedgerEntryJpaEntity toEntity(LedgerEntry l) {
         LedgerEntryJpaEntity e = new LedgerEntryJpaEntity();
         e.setId(l.getId().value());
@@ -37,4 +49,3 @@ public final class LedgerEntryMapper {
         return e;
     }
 }
-

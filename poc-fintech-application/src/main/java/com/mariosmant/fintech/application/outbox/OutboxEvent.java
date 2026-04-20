@@ -52,6 +52,10 @@ public class OutboxEvent {
                 eventType, payload, false, Instant.now());
     }
 
+    /**
+     * Marks this outbox event as published so the poller skips it on subsequent polls.
+     * Called by the {@code OutboxPollingPublisher} after successful Kafka delivery.
+     */
     public void markPublished() {
         this.published = true;
     }

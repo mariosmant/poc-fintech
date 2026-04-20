@@ -23,13 +23,15 @@ public class BeanConfig {
     @Bean
     public InitiateTransferUseCase initiateTransferUseCase(
             TransferRepository transferRepository,
-            OutboxRepository outboxRepository) {
-        return new InitiateTransferUseCase(transferRepository, outboxRepository);
+            OutboxRepository outboxRepository,
+            AccountRepository accountRepository) {
+        return new InitiateTransferUseCase(transferRepository, outboxRepository, accountRepository);
     }
 
     @Bean
-    public TransferQueryUseCase transferQueryUseCase(TransferRepository transferRepository) {
-        return new TransferQueryUseCase(transferRepository);
+    public TransferQueryUseCase transferQueryUseCase(TransferRepository transferRepository,
+                                                     AccountRepository accountRepository) {
+        return new TransferQueryUseCase(transferRepository, accountRepository);
     }
 
     @Bean

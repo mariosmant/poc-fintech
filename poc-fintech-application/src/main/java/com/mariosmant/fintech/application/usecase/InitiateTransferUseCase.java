@@ -7,9 +7,14 @@ import com.mariosmant.fintech.application.port.OutboxRepository;
 import com.mariosmant.fintech.application.serialization.EventPayloadSerializer;
 import com.mariosmant.fintech.domain.event.DomainEvent;
 import com.mariosmant.fintech.domain.exception.DuplicateTransferException;
+import com.mariosmant.fintech.domain.model.Account;
 import com.mariosmant.fintech.domain.model.Transfer;
-import com.mariosmant.fintech.domain.model.vo.*;
+import com.mariosmant.fintech.domain.model.vo.AccountId;
+import com.mariosmant.fintech.domain.model.vo.IdempotencyKey;
+import com.mariosmant.fintech.domain.model.vo.Money;
+import com.mariosmant.fintech.domain.port.outbound.AccountRepository;
 import com.mariosmant.fintech.domain.port.outbound.TransferRepository;
+import com.mariosmant.fintech.domain.util.IbanUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,11 +38,14 @@ public class InitiateTransferUseCase {
 
     private final TransferRepository transferRepository;
     private final OutboxRepository outboxRepository;
+    private final AccountRepository accountRepository;
 
     public InitiateTransferUseCase(TransferRepository transferRepository,
-                                   OutboxRepository outboxRepository) {
+                                   OutboxRepository outboxRepository,
+                                   AccountRepository accountRepository) {
         this.transferRepository = transferRepository;
         this.outboxRepository = outboxRepository;
+        this.accountRepository = accountRepository;
     }
 
     /**
@@ -46,6 +54,7 @@ public class InitiateTransferUseCase {
      * @param command the initiation command
      * @return the transfer response DTO
      * @throws DuplicateTransferException if idempotency key already exists
+     * @throws SecurityException if the source account is not owned by the initiating user
      */
     public TransferResponse handle(InitiateTransferCommand command) {
         var idempotencyKey = new IdempotencyKey(command.idempotencyKey());
@@ -58,18 +67,33 @@ public class InitiateTransferUseCase {
             return toResponse(existing.get());
         }
 
+        // Ownership check — source account must belong to the authenticated user (IDOR prevention)
+        var sourceAccountId = new AccountId(command.sourceAccountId());
+        var sourceAccount = accountRepository.findById(sourceAccountId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Source account not found: " + command.sourceAccountId()));
+        // Verify via persistence layer that ownerId matches the JWT user
+        accountRepository.findByOwnerId(command.initiatedBy()).stream()
+                .filter(a -> a.getId().equals(sourceAccountId))
+                .findFirst()
+                .orElseThrow(() -> new SecurityException(
+                        "Source account does not belong to the authenticated user"));
+
+        // Resolve target — either the supplied UUID or an IBAN (both accepted; UUID wins when present)
+        Account targetAccount = resolveTargetAccount(command);
+
         // Create the aggregate
         var sourceAmount = new Money(command.amount(), command.sourceCurrency());
         var transfer = Transfer.initiate(
-                new AccountId(command.sourceAccountId()),
-                new AccountId(command.targetAccountId()),
+                sourceAccountId,
+                targetAccount.getId(),
                 sourceAmount,
                 command.targetCurrency(),
                 idempotencyKey
         );
 
         // Persist aggregate + outbox events in the same transaction boundary
-        Transfer saved = transferRepository.save(transfer);
+        Transfer saved = transferRepository.save(transfer, command.initiatedBy());
 
         // Use original aggregate events (the remapped saved instance has no in-memory events).
         for (DomainEvent event : transfer.getDomainEvents()) {
@@ -83,19 +107,48 @@ public class InitiateTransferUseCase {
         }
         transfer.clearEvents();
 
-        log.info("Transfer initiated: id={}, source={}, target={}, amount={}",
+        log.info("Transfer initiated: id={}, source={}, target={}, amount={}, initiatedBy={}",
                 saved.getId(), command.sourceAccountId(),
-                command.targetAccountId(), sourceAmount);
+                targetAccount.getId().value(), sourceAmount, command.initiatedBy());
 
-        return toResponse(saved);
+        return toResponse(saved, sourceAccount.getIban(), targetAccount.getIban());
+    }
+
+    private Account resolveTargetAccount(InitiateTransferCommand command) {
+        if (command.targetAccountId() != null) {
+            return accountRepository.findById(new AccountId(command.targetAccountId()))
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "Target account not found: " + command.targetAccountId()));
+        }
+        if (command.targetIban() != null && !command.targetIban().isBlank()) {
+            String normalized = IbanUtil.normalize(command.targetIban());
+            if (!IbanUtil.isValid(normalized)) {
+                throw new IllegalArgumentException("Invalid target IBAN: " + command.targetIban());
+            }
+            return accountRepository.findByIban(normalized)
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "Target IBAN not recognised by this institution: " + normalized));
+        }
+        throw new IllegalArgumentException("Either targetAccountId or targetIban must be provided");
     }
 
     private TransferResponse toResponse(Transfer t) {
+        // Called only on idempotency hit — look up IBANs for a consistent response shape.
+        String sourceIban = accountRepository.findById(t.getSourceAccountId())
+                .map(Account::getIban).orElse(null);
+        String targetIban = accountRepository.findById(t.getTargetAccountId())
+                .map(Account::getIban).orElse(null);
+        return toResponse(t, sourceIban, targetIban);
+    }
+
+    private TransferResponse toResponse(Transfer t, String sourceIban, String targetIban) {
         return new TransferResponse(
                 t.getId().value(),
                 t.getStatus().name(),
                 t.getSourceAccountId().value(),
+                sourceIban,
                 t.getTargetAccountId().value(),
+                targetIban,
                 t.getSourceAmount().amount(),
                 t.getSourceAmount().currency().name(),
                 t.getTargetAmount() != null ? t.getTargetAmount().amount() : null,

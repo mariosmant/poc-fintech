@@ -92,13 +92,46 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
+                    <configuration>
+                        <!--
+                          Mockito 5.x / JDK 21+ requires mockito-core to be attached as a
+                          Java agent (self-attach is deprecated and disabled on newer JDKs).
+                          The path is resolved by maven-dependency-plugin's `properties` goal
+                          (bound below to the `initialize` phase on child modules that use Mockito).
+                          See: https://javadoc.io/doc/org.mockito/mockito-core/latest/org.mockito/org/mockito/Mockito.html#0.3
+                        -->
+                        <argLine>-javaagent:${org.mockito:mockito-core:jar} -Xshare:off</argLine>
+                    </configuration>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-failsafe-plugin</artifactId>
+                    <configuration>
+                        <argLine>-javaagent:${org.mockito:mockito-core:jar} -Xshare:off</argLine>
+                    </configuration>
                 </plugin>
             </plugins>
         </pluginManagement>
+
+        <!--
+          Applied to all child modules: resolve the Mockito agent jar path
+          as a Maven property so Surefire/Failsafe can pass it as `-javaagent`.
+        -->
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>resolve-mockito-agent</id>
+                        <phase>initialize</phase>
+                        <goals>
+                            <goal>properties</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
     </build>
 </project>
 

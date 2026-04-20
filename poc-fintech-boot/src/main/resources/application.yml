@@ -1,6 +1,7 @@
 # ============================================================================
 # POC Fintech — Application Configuration
 # Spring Boot 4.0.5 | Java 25 | Jackson 3.x (tools.jackson) | NIST/SOG-IS/SOC 2 hardened
+# Keycloak OAuth2 | MDC Logging | Audit | Kafka DLQ | Rate Limiting
 # ============================================================================
 
 server:
@@ -15,10 +16,19 @@ server:
       cookie:
         http-only: true               # Prevent XSS cookie theft
         secure: true                  # Cookies only over HTTPS
+        same-site: strict             # CSRF protection via SameSite
 
 spring:
   application:
     name: poc-fintech
+
+  # ── OAuth2 Resource Server (Keycloak JWT) ──────────────────────────────
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8180/realms/fintech
+          jwk-set-uri: http://localhost:8180/realms/fintech/protocol/openid-connect/certs
 
   # ── Jackson 3.x hardening (defence-in-depth — also configured in JacksonConfig bean) ─
   # Note: In Jackson 3.x (tools.jackson), some features moved to new enums:
@@ -114,6 +124,12 @@ resilience4j:
         wait-duration-in-open-state: 10s
         sliding-window-size: 10
         register-health-indicator: true
+      kafkaPublisher:
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 15s
+        sliding-window-size: 10
+        permitted-number-of-calls-in-half-open-state: 3
+        register-health-indicator: true
   retry:
     instances:
       fraudDetection:
@@ -126,11 +142,26 @@ resilience4j:
         wait-duration: 500ms
         enable-exponential-backoff: true
         exponential-backoff-multiplier: 2
+      kafkaPublisher:
+        max-attempts: 3
+        wait-duration: 1s
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
 
-# ── Logging ──────────────────────────────────────────────────────────────
+# ── Application custom config ────────────────────────────────────────────
+app:
+  cors:
+    allowed-origins: http://localhost:5173
+  keycloak:
+    issuer-uri: http://localhost:8180/realms/fintech
+  rate-limit:
+    requests-per-minute: 100
+
+# ── Logging (MDC-enriched pattern with userId, requestId, traceId) ───────
 logging:
   level:
     com.mariosmant.fintech: DEBUG
     org.springframework.kafka: WARN
     org.hibernate.SQL: WARN
-
+  pattern:
+    console: "%d{ISO8601} [%thread] %-5level [userId=%X{userId:-anonymous}] [requestId=%X{requestId:-}] [traceId=%X{traceId:-}] %logger{36} - %msg%n"

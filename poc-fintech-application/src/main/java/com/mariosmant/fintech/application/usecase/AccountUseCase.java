@@ -39,10 +39,10 @@ public class AccountUseCase {
         var currency = Currency.valueOf(command.currency());
         var initialBalance = new Money(command.initialBalance(), currency);
         var account = Account.createWithBalance(command.ownerName(), initialBalance);
-        Account saved = accountRepository.save(account);
+        Account saved = accountRepository.save(account, command.userId());
 
-        log.info("Account created: id={}, owner={}, currency={}",
-                saved.getId(), command.ownerName(), currency);
+        log.info("Account created: id={}, owner={}, currency={}, userId={}",
+                saved.getId(), command.ownerName(), currency, command.userId());
 
         return toResponse(saved);
     }
@@ -66,9 +66,20 @@ public class AccountUseCase {
         return accountRepository.findAll().stream().map(this::toResponse).toList();
     }
 
+    /**
+     * Returns all accounts owned by the given user (tenant isolation).
+     *
+     * @param ownerId the owner's user ID (from JWT sub claim)
+     * @return accounts belonging to the specified owner
+     */
+    public List<AccountResponse> findByOwnerId(String ownerId) {
+        return accountRepository.findByOwnerId(ownerId).stream().map(this::toResponse).toList();
+    }
+
     private AccountResponse toResponse(Account a) {
         return new AccountResponse(
                 a.getId().value(),
+                a.getIban(),
                 a.getOwnerName(),
                 a.getBalance().amount(),
                 a.getBalance().currency().name()

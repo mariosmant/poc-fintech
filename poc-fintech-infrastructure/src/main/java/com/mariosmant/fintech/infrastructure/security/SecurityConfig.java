@@ -2,18 +2,33 @@ package com.mariosmant.fintech.infrastructure.security;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
+import org.springframework.core.convert.converter.Converter;
+import org.springframework.http.HttpMethod;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 import org.springframework.security.web.header.writers.XXssProtectionHeaderWriter;
 import org.springframework.web.cors.CorsConfigurationSource;
 
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
 /**
  * Security configuration aligned with NIST SP 800-53, SOG-IS Crypto Evaluation Scheme,
  * and SOC 2 Type II compliance controls.
+ *
+ * <p>Integrates Keycloak as OAuth2/OIDC identity provider via JWT resource server.
+ * All API endpoints require authentication. Actuator and Swagger are public.</p>
  *
  * <p><b>Applied security controls:</b></p>
  * <table>
@@ -32,15 +47,11 @@ import org.springframework.web.cors.CorsConfigurationSource;
  *       <td>Disables unnecessary browser features</td></tr>
  *   <tr><td>Cache-Control: no-store</td><td>NIST SC-28</td>
  *       <td>Prevents caching of sensitive financial data</td></tr>
- *   <tr><td>Stateless sessions</td><td>NIST IA-2</td>
- *       <td>No server-side session state; token-based auth in production</td></tr>
+ *   <tr><td>Stateless sessions + OAuth2 JWT</td><td>NIST IA-2</td>
+ *       <td>No server-side session state; Keycloak JWT-based auth</td></tr>
  *   <tr><td>CSRF disabled</td><td>—</td>
- *       <td>Stateless REST API; mitigated by token-based auth</td></tr>
+ *       <td>Stateless REST API with Bearer token auth (not cookie-based)</td></tr>
  * </table>
- *
- * <p><b>Production note:</b> In a production deployment, add OAuth 2.0 / JWT
- * resource server, mTLS for service-to-service, rate limiting via API gateway,
- * and IP allowlisting for admin endpoints.</p>
  *
  * @author mariosmant
  * @see <a href="https://csrc.nist.gov/publications/detail/sp/800-53/rev-5/final">NIST SP 800-53 Rev 5</a>
@@ -48,57 +59,46 @@ import org.springframework.web.cors.CorsConfigurationSource;
  */
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
+@Profile("!test")
 public class SecurityConfig {
 
     /**
      * Configures the HTTP security filter chain with production-grade
-     * security headers and policies.
-     *
-     * @param http the {@link HttpSecurity} builder
-     * @return the configured {@link SecurityFilterChain}
-     * @throws Exception if configuration fails
+     * security headers, OAuth2 resource server, and policies.
      */
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http,
                                                    CorsConfigurationSource corsConfigurationSource) throws Exception {
         http
-                // ── CORS (for React frontend) ────────────────────────────
+                // ── CORS (for React frontend + Keycloak) ──────────────────
                 .cors(cors -> cors.configurationSource(corsConfigurationSource))
 
                 // ── Session management (NIST IA-2) ───────────────────────
-                // Stateless API — no server-side sessions
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
-                // ── CSRF (disabled for stateless REST API) ───────────────
-                // Mitigated by token-based auth (JWT/OAuth2) in production
+                // ── CSRF (disabled for stateless Bearer-token REST API) ──
                 .csrf(AbstractHttpConfigurer::disable)
+
+                // ── OAuth2 Resource Server (JWT from Keycloak) ───────────
+                .oauth2ResourceServer(oauth2 -> oauth2
+                        .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())))
 
                 // ── Security headers ─────────────────────────────────────
                 .headers(headers -> headers
-                        // HSTS: 1 year, include subdomains, preload-ready (NIST SC-8)
                         .httpStrictTransportSecurity(hsts -> hsts
                                 .includeSubDomains(true)
                                 .preload(true)
                                 .maxAgeInSeconds(31_536_000))
-
-                        // X-Content-Type-Options: nosniff (prevents MIME-sniffing)
                         .contentTypeOptions(contentType -> {
                         })
-
-                        // X-Frame-Options: DENY (prevents clickjacking)
                         .frameOptions(frame -> frame.deny())
-
-                        // X-XSS-Protection: 0 (modern CSP supersedes this legacy header)
                         .xssProtection(xss ->
                                 xss.headerValue(XXssProtectionHeaderWriter.HeaderValue.DISABLED))
-
-                        // Referrer-Policy (SOC 2 CC6.1 — limit info leakage)
                         .referrerPolicy(referrer ->
                                 referrer.policy(ReferrerPolicyHeaderWriter
                                         .ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
-
-                        // Content-Security-Policy (NIST SC-18 — restrict resource loading)
                         .contentSecurityPolicy(csp -> csp
                                 .policyDirectives(
                                         "default-src 'self'; " +
@@ -106,17 +106,13 @@ public class SecurityConfig {
                                         "style-src 'self' 'unsafe-inline'; " +
                                         "img-src 'self' data:; " +
                                         "font-src 'self'; " +
-                                        "connect-src 'self'; " +
+                                        "connect-src 'self' http://localhost:8180; " +
                                         "frame-ancestors 'none'; " +
                                         "form-action 'self'; " +
                                         "base-uri 'self'"))
-
-                        // Permissions-Policy (SOC 2 CC6.6 — disable unused browser features)
                         .permissionsPolicy(permissions -> permissions
                                 .policy("geolocation=(), camera=(), microphone=(), " +
                                         "payment=(), usb=(), magnetometer=()"))
-                        // Cache-Control: no-cache, no-store, max-age=0 (enabled by default
-                        // in Spring Security — NIST SC-28, prevents caching sensitive data)
                 )
 
                 // ── Authorization rules ──────────────────────────────────
@@ -135,15 +131,57 @@ public class SecurityConfig {
                                 "/swagger-ui.html",
                                 "/v3/api-docs/**"
                         ).permitAll()
-                        // API endpoints — permit for POC (add JWT/OAuth2 in production)
-                        .requestMatchers("/api/**").permitAll()
+                        // CORS preflight
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        // All API endpoints require authentication (hostile environment)
+                        .requestMatchers("/api/**").authenticated()
                         // All other requests require authentication
                         .anyRequest().authenticated()
                 );
 
         return http.build();
     }
+
+    /**
+     * Converts Keycloak JWT claims to Spring Security authorities.
+     * Extracts roles from both realm_access and resource_access claims.
+     */
+    @Bean
+    public JwtAuthenticationConverter jwtAuthenticationConverter() {
+        JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
+        converter.setJwtGrantedAuthoritiesConverter(keycloakGrantedAuthoritiesConverter());
+        return converter;
+    }
+
+    /**
+     * Extracts Keycloak realm roles and resource roles from JWT claims
+     * and maps them to Spring Security GrantedAuthority with ROLE_ prefix.
+     */
+    private Converter<Jwt, Collection<GrantedAuthority>> keycloakGrantedAuthoritiesConverter() {
+        return jwt -> {
+            // Extract realm roles
+            Stream<String> realmRoles = Optional.ofNullable(jwt.getClaimAsMap("realm_access"))
+                    .map(ra -> ra.get("roles"))
+                    .filter(List.class::isInstance)
+                    .map(roles -> ((List<?>) roles).stream()
+                            .filter(String.class::isInstance)
+                            .map(String.class::cast))
+                    .orElse(Stream.empty());
+
+            // Extract client-specific roles
+            Stream<String> clientRoles = Optional.ofNullable(jwt.getClaimAsMap("resource_access"))
+                    .map(ra -> ra.get("poc-fintech-bff"))
+                    .filter(Map.class::isInstance)
+                    .map(client -> ((Map<?, ?>) client).get("roles"))
+                    .filter(List.class::isInstance)
+                    .map(roles -> ((List<?>) roles).stream()
+                            .filter(String.class::isInstance)
+                            .map(String.class::cast))
+                    .orElse(Stream.empty());
+
+            return Stream.concat(realmRoles, clientRoles)
+                    .map(role -> new SimpleGrantedAuthority("ROLE_" + role.toUpperCase()))
+                    .collect(Collectors.toSet());
+        };
+    }
 }
-
-
-

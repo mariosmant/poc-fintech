@@ -14,10 +14,30 @@ import java.util.List;
  */
 public interface LedgerRepository {
 
+    /**
+     * Persists a new ledger entry. Ledger entries are immutable once saved.
+     *
+     * @param entry the ledger entry to save
+     * @return the saved ledger entry
+     */
     LedgerEntry save(LedgerEntry entry);
 
+    /**
+     * Finds all ledger entries associated with a specific transfer.
+     * A completed transfer will have exactly one entry (debit + credit pair).
+     *
+     * @param transferId the transfer ID to search by
+     * @return list of ledger entries for the transfer
+     */
     List<LedgerEntry> findByTransferId(TransferId transferId);
 
+    /**
+     * Finds all ledger entries where the account appears as either the debit
+     * or credit side, ordered by creation time descending.
+     *
+     * @param accountId the account ID to search by
+     * @return list of ledger entries involving the account
+     */
     List<LedgerEntry> findByAccountId(AccountId accountId);
 
     /**
@@ -28,4 +48,3 @@ public interface LedgerRepository {
      */
     List<LedgerEntry> findRecent(int limit);
 }
-

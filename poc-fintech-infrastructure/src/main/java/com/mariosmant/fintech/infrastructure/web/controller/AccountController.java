@@ -3,6 +3,8 @@ package com.mariosmant.fintech.infrastructure.web.controller;
 import com.mariosmant.fintech.application.command.CreateAccountCommand;
 import com.mariosmant.fintech.application.dto.AccountResponse;
 import com.mariosmant.fintech.application.usecase.AccountUseCase;
+import com.mariosmant.fintech.infrastructure.security.SecurityContextUtil;
+import com.mariosmant.fintech.infrastructure.security.audit.Audited;
 import com.mariosmant.fintech.infrastructure.web.dto.CreateAccountRequest;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -10,6 +12,7 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -22,9 +25,7 @@ import java.util.UUID;
 
 /**
  * REST controller for account operations.
- *
- * <p>Provides endpoints for creating and retrieving financial accounts.
- * All endpoints are documented via OpenAPI 3.x annotations for Swagger UI.</p>
+ * All endpoints require OAuth2 authentication. User ID is extracted from JWT.
  *
  * @author mariosmant
  * @since 1.0.0
@@ -32,6 +33,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/accounts")
 @Tag(name = "Accounts", description = "Account management operations — create and query financial accounts")
+@SecurityRequirement(name = "bearer-jwt")
 public class AccountController {
 
     private final AccountUseCase accountUseCase;
@@ -42,23 +44,26 @@ public class AccountController {
 
     /**
      * Creates a new financial account.
-     *
-     * @param request the account creation request
-     * @return the created account details
+     * Owner is set to the authenticated user — never from client input.
      */
     @PostMapping
+    @Audited(action = "CREATE_ACCOUNT", resourceType = "Account")
     @Operation(summary = "Create a new account",
-            description = "Creates a new financial account with the specified owner, currency, and initial balance.")
+            description = "Creates a new financial account. Owner is set to the authenticated user.")
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "Account created successfully",
                     content = @Content(schema = @Schema(implementation = AccountResponse.class))),
             @ApiResponse(responseCode = "400", description = "Validation error — invalid request body",
-                    content = @Content(schema = @Schema(implementation = ProblemDetail.class)))
+                    content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
+            @ApiResponse(responseCode = "401", description = "Unauthorized — missing or invalid JWT")
     })
     public ResponseEntity<AccountResponse> createAccount(
             @Valid @RequestBody CreateAccountRequest request) {
+        // User ID and username from JWT — never trust client-supplied identity (NIST IA-2)
+        String userId = SecurityContextUtil.getAuthenticatedUserId();
+        String ownerName = SecurityContextUtil.getAuthenticatedUsername();
         var command = new CreateAccountCommand(
-                request.ownerName(), request.currency(), request.initialBalance());
+                ownerName, request.currency(), request.initialBalance(), userId);
         return ResponseEntity.status(HttpStatus.CREATED).body(accountUseCase.create(command));
     }
 
@@ -84,16 +89,17 @@ public class AccountController {
         return ResponseEntity.ok(accountUseCase.findById(id));
     }
 
-    /** Returns all accounts ordered by creation date descending. */
+    /** Returns accounts owned by the authenticated user, ordered by creation date descending. */
     @GetMapping
-    @Operation(summary = "List accounts",
-            description = "Returns all accounts ordered by most recent first for monitoring dashboards.")
+    @Operation(summary = "List my accounts",
+            description = "Returns all accounts owned by the authenticated user.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Accounts retrieved",
                     content = @Content(schema = @Schema(implementation = AccountResponse.class)))
     })
     public ResponseEntity<List<AccountResponse>> listAccounts() {
-        return ResponseEntity.ok(accountUseCase.findAll());
+        String userId = SecurityContextUtil.getAuthenticatedUserId();
+        return ResponseEntity.ok(accountUseCase.findByOwnerId(userId));
     }
 }
 

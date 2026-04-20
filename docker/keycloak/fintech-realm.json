@@ -1,0 +1,121 @@
+{
+  "realm": "fintech",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "maxFailureWaitSeconds": 900,
+  "minimumQuickLoginWaitSeconds": 60,
+  "waitIncrementSeconds": 60,
+  "quickLoginCheckMilliSeconds": 1000,
+  "maxDeltaTimeSeconds": 43200,
+  "failureFactor": 5,
+  "passwordPolicy": "length(12) and upperCase(1) and lowerCase(1) and digits(1) and specialChars(1) and notUsername and passwordHistory(3)",
+  "roles": {
+    "realm": [
+      {
+        "name": "user",
+        "description": "Standard fintech user"
+      },
+      {
+        "name": "admin",
+        "description": "Fintech administrator"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "poc-fintech-bff",
+      "name": "POC Fintech BFF Client",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "implicitFlowEnabled": false,
+      "protocol": "openid-connect",
+      "rootUrl": "http://localhost:5173",
+      "baseUrl": "/",
+      "redirectUris": [
+        "http://localhost:5173/*",
+        "http://localhost:8080/*"
+      ],
+      "webOrigins": [
+        "http://localhost:5173",
+        "http://localhost:8080"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:5173/*"
+      },
+      "defaultClientScopes": [
+        "basic",
+        "profile",
+        "email",
+        "roles"
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "enabled": true,
+      "email": "alice@fintech.local",
+      "firstName": "Alice",
+      "lastName": "Johnson",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Alice123!@#$",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["user"]
+    },
+    {
+      "username": "bob",
+      "enabled": true,
+      "email": "bob@fintech.local",
+      "firstName": "Bob",
+      "lastName": "Smith",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Bob123!@#$xx",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["user"]
+    },
+    {
+      "username": "admin",
+      "enabled": true,
+      "email": "admin@fintech.local",
+      "firstName": "Admin",
+      "lastName": "User",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Admin123!@#$",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["user", "admin"]
+    }
+  ],
+  "scopeMappings": [
+    {
+      "client": "poc-fintech-bff",
+      "roles": ["user"]
+    }
+  ]
+}
+
+
+
+
+
+

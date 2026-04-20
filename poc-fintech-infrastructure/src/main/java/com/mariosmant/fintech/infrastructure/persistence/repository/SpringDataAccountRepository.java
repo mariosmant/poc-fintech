@@ -17,5 +17,11 @@ public interface SpringDataAccountRepository extends JpaRepository<AccountJpaEnt
 
 	/** Returns all accounts ordered by creation time descending. */
 	java.util.List<AccountJpaEntity> findAllByOrderByCreatedAtDesc();
+
+	/** Returns all accounts owned by the given user, ordered by creation time descending. */
+	java.util.List<AccountJpaEntity> findByOwnerIdOrderByCreatedAtDesc(String ownerId);
+
+	/** Looks up an account by its canonical, normalised IBAN. */
+	java.util.Optional<AccountJpaEntity> findByIban(String iban);
 }
 

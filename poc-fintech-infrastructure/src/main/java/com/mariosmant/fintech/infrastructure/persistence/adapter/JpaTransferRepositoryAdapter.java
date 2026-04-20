@@ -52,6 +52,17 @@ public class JpaTransferRepositoryAdapter implements TransferRepository {
     @Override
     public Transfer save(Transfer transfer) {
         var entity = TransferMapper.toEntity(transfer);
+        // Preserve initiatedBy from existing entity if updating
+        jpaRepo.findById(transfer.getId().value()).ifPresent(existing ->
+                entity.setInitiatedBy(existing.getInitiatedBy()));
+        var saved = jpaRepo.save(entity);
+        return TransferMapper.toDomain(saved);
+    }
+
+    @Override
+    public Transfer save(Transfer transfer, String initiatedBy) {
+        var entity = TransferMapper.toEntity(transfer);
+        entity.setInitiatedBy(initiatedBy);
         var saved = jpaRepo.save(entity);
         return TransferMapper.toDomain(saved);
     }

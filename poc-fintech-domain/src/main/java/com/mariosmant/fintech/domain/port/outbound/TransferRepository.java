@@ -34,5 +34,16 @@ public interface TransferRepository {
     List<Transfer> findLatest(int limit);
 
     Transfer save(Transfer transfer);
+
+    /**
+     * Persists the given transfer with the authenticated user's ID as initiator.
+     *
+     * @param transfer    the transfer to save
+     * @param initiatedBy the authenticated user ID (from JWT sub claim)
+     * @return the saved transfer
+     */
+    default Transfer save(Transfer transfer, String initiatedBy) {
+        return save(transfer);
+    }
 }
 

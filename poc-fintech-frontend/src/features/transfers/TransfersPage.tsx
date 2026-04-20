@@ -1,24 +1,41 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { useInitiateTransfer, useMonitoredTransfers, useTransfersList } from '../../hooks/useApi';
+import { useAccountsList, useInitiateTransfer, useMonitoredTransfers, useTransfersList } from '../../hooks/useApi';
 import { ErrorMessage, Spinner } from '../../components/ui/Feedback';
+import { IbanDisplay } from '../../components/ui/IbanDisplay';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { formatCurrency, generateIdempotencyKey } from '../../utils/format';
-import type { Currency, Transfer } from '../../types/api';
+import { formatIban, isValidIban, normalizeIban } from '../../utils/iban';
+import type { Currency, InitiateTransferRequest, Transfer } from '../../types/api';
 
 const CURRENCIES: Currency[] = ['USD', 'EUR', 'GBP', 'JPY', 'CHF'];
+
+type TargetMode = 'internal' | 'external';
+
+/** Returns true when the raw user-typed IBAN field contains no meaningful characters. */
+function externalIbanInputIsEmpty(raw: string): boolean {
+  return raw.replace(/\s+/g, '').length === 0;
+}
 
 /** Transfers page — initiate transfers and track their saga status. */
 export function TransfersPage() {
   const [transferIds, setTransferIds] = useState<string[]>([]);
   const transfersListQuery = useTransfersList(50);
   const initiateMutation = useInitiateTransfer();
+  const accountsQuery = useAccountsList();
 
   // Form state
   const [sourceId, setSourceId] = useState('');
-  const [targetId, setTargetId] = useState('');
+  const [targetMode, setTargetMode] = useState<TargetMode>('internal');
+  const [targetInternalId, setTargetInternalId] = useState('');
+  const [targetIbanInput, setTargetIbanInput] = useState('');
   const [amount, setAmount] = useState('100');
   const [srcCurrency, setSrcCurrency] = useState<Currency>('USD');
   const [tgtCurrency, setTgtCurrency] = useState<Currency>('EUR');
+
+  const ownAccounts = accountsQuery.data ?? [];
+  const externalIbanNormalized = normalizeIban(targetIbanInput);
+  const externalIbanValid = externalIbanInputIsEmpty(targetIbanInput) ? false : isValidIban(externalIbanNormalized);
+  const externalIbanShowError = !externalIbanInputIsEmpty(targetIbanInput) && !externalIbanValid;
 
   // Track selected transfer details while all rows are monitored in the background.
   const [selectedTransferId, setSelectedTransferId] = useState('');
@@ -61,22 +78,23 @@ export function TransfersPage() {
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    initiateMutation.mutate(
-      {
-        sourceAccountId: sourceId,
-        targetAccountId: targetId,
-        amount: parseFloat(amount),
-        sourceCurrency: srcCurrency,
-        targetCurrency: tgtCurrency,
-        idempotencyKey: generateIdempotencyKey(),
+    const basePayload: InitiateTransferRequest = {
+      sourceAccountId: sourceId,
+      amount: parseFloat(amount),
+      sourceCurrency: srcCurrency,
+      targetCurrency: tgtCurrency,
+      idempotencyKey: generateIdempotencyKey(),
+    };
+    const payload: InitiateTransferRequest = targetMode === 'internal'
+      ? { ...basePayload, targetAccountId: targetInternalId }
+      : { ...basePayload, targetIban: externalIbanNormalized };
+
+    initiateMutation.mutate(payload, {
+      onSuccess: (transfer) => {
+        setTransferIds((prev) => (prev.includes(transfer.id) ? prev : [transfer.id, ...prev]));
+        setSelectedTransferId(transfer.id);
       },
-      {
-        onSuccess: (transfer) => {
-          setTransferIds((prev) => (prev.includes(transfer.id) ? prev : [transfer.id, ...prev]));
-          setSelectedTransferId(transfer.id);
-        },
-      },
-    );
+    });
   };
 
   return (
@@ -89,26 +107,85 @@ export function TransfersPage() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Source Account ID</label>
-              <input
-                type="text"
+              <label htmlFor="source-account" className="block text-sm font-medium text-gray-700 mb-1">Source Account</label>
+              <select
+                id="source-account"
                 value={sourceId}
-                onChange={(e) => setSourceId(e.target.value)}
+                onChange={(e) => {
+                  setSourceId(e.target.value);
+                  // Auto-set source currency from selected account
+                  const acct = ownAccounts.find(a => a.id === e.target.value);
+                  if (acct) setSrcCurrency(acct.currency);
+                }}
                 required
-                placeholder="UUID of source account"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
-              />
+              >
+                <option value="">Select your account…</option>
+                {ownAccounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.ownerName} — {formatIban(a.iban)} — {formatCurrency(a.balance, a.currency)} {a.currency}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Target Account ID</label>
-              <input
-                type="text"
-                value={targetId}
-                onChange={(e) => setTargetId(e.target.value)}
-                required
-                placeholder="UUID of target account"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
-              />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Beneficiary</label>
+              <div className="inline-flex rounded-lg border border-gray-300 overflow-hidden mb-2" role="tablist" aria-label="Target account type">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={targetMode === 'internal'}
+                  onClick={() => setTargetMode('internal')}
+                  className={`px-3 py-1.5 text-sm ${targetMode === 'internal' ? 'bg-primary-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+                >
+                  My accounts
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={targetMode === 'external'}
+                  onClick={() => setTargetMode('external')}
+                  className={`px-3 py-1.5 text-sm border-l border-gray-300 ${targetMode === 'external' ? 'bg-primary-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+                >
+                  External IBAN
+                </button>
+              </div>
+              {targetMode === 'internal' ? (
+                <select
+                  aria-label="Target account"
+                  value={targetInternalId}
+                  onChange={(e) => setTargetInternalId(e.target.value)}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+                >
+                  <option value="">Select beneficiary account…</option>
+                  {ownAccounts
+                    .filter((a) => a.id !== sourceId)
+                    .map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.ownerName} — {formatIban(a.iban)} — {a.currency}
+                      </option>
+                    ))}
+                </select>
+              ) : (
+                <>
+                  <input
+                    aria-label="External beneficiary IBAN"
+                    type="text"
+                    value={targetIbanInput}
+                    onChange={(e) => setTargetIbanInput(e.target.value.toUpperCase())}
+                    required
+                    placeholder="e.g. DE89 5001 0517 0000 1234 56"
+                    className={`w-full px-3 py-2 border rounded-lg text-sm font-mono focus:ring-2 focus:ring-primary-500 ${externalIbanShowError ? 'border-red-400' : 'border-gray-300'}`}
+                  />
+                  {externalIbanShowError && (
+                    <p className="mt-1 text-xs text-red-600">Invalid IBAN — check country code, length and check digits.</p>
+                  )}
+                  {externalIbanValid && (
+                    <p className="mt-1 text-xs text-green-600">✓ Valid IBAN ({formatIban(externalIbanNormalized)})</p>
+                  )}
+                </>
+              )}
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -147,7 +224,11 @@ export function TransfersPage() {
           </div>
           <button
             type="submit"
-            disabled={initiateMutation.isPending}
+            disabled={
+              initiateMutation.isPending ||
+              !sourceId ||
+              (targetMode === 'internal' ? !targetInternalId : !externalIbanValid)
+            }
             className="px-6 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50"
           >
             {initiateMutation.isPending ? 'Initiating…' : 'Initiate Transfer'}
@@ -217,8 +298,12 @@ export function TransfersPage() {
                   <td className="px-4 py-3 text-xs text-gray-500">
                     {t.sourceCurrency} → {t.targetCurrency}
                   </td>
-                  <td className="px-4 py-3 font-mono text-xs text-gray-500">
-                    <div className="break-all">{t.sourceAccountId} → {t.targetAccountId}</div>
+                  <td className="px-4 py-3 text-xs text-gray-600">
+                    <div className="flex flex-col gap-1">
+                      <IbanDisplay iban={t.sourceIban} label="Source IBAN" />
+                      <span className="text-gray-400">↓</span>
+                      <IbanDisplay iban={t.targetIban} label="Target IBAN" />
+                    </div>
                   </td>
                 </tr>
               ))}

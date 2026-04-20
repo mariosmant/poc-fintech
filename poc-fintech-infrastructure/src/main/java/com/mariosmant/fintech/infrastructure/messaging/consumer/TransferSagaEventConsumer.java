@@ -27,6 +27,8 @@ public class TransferSagaEventConsumer {
 
     @KafkaListener(topics = "transfer-events", groupId = "transfer-saga-group")
     public void onTransferEvent(String message, Acknowledgment acknowledgment) {
+        // Exceptions propagate to DefaultErrorHandler for retry + DLQ routing.
+        // Do NOT catch and swallow — let the error handler manage retries.
         try {
             JsonNode json = objectMapper.readTree(message);
             String eventType = json.get("eventType").asText();
@@ -38,7 +40,8 @@ public class TransferSagaEventConsumer {
             }
             acknowledgment.acknowledge();
         } catch (Exception ex) {
-            log.error("Kafka message processing error", ex);
+            log.error("Kafka message processing error — will be retried or sent to DLT", ex);
+            throw new RuntimeException("Failed to process transfer event", ex);
         }
     }
 

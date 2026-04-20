@@ -20,6 +20,7 @@ public final class AccountMapper {
     public static Account toDomain(AccountJpaEntity e) {
         return new Account(
                 new AccountId(e.getId()),
+                e.getIban(),
                 e.getOwnerName(),
                 new Money(e.getBalanceAmount(), Currency.valueOf(e.getBalanceCurrency())),
                 e.getVersion()
@@ -30,6 +31,7 @@ public final class AccountMapper {
     public static AccountJpaEntity toEntity(Account a) {
         return new AccountJpaEntity(
                 a.getId().value(),
+                a.getIban(),
                 a.getOwnerName(),
                 a.getBalance().amount(),
                 a.getBalance().currency().name(),
@@ -37,4 +39,3 @@ public final class AccountMapper {
         );
     }
 }
-

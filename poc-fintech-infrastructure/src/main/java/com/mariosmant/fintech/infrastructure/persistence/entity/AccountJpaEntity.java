@@ -27,8 +27,14 @@ public class AccountJpaEntity {
     @Column(name = "id", nullable = false, updatable = false)
     private UUID id;
 
+    @Column(name = "iban", nullable = false, unique = true, length = 34)
+    private String iban;
+
     @Column(name = "owner_name", nullable = false)
     private String ownerName;
+
+    @Column(name = "owner_id")
+    private String ownerId;
 
     @Column(name = "balance_amount", nullable = false, precision = 19, scale = 4)
     private BigDecimal balanceAmount;
@@ -52,10 +58,17 @@ public class AccountJpaEntity {
     protected AccountJpaEntity() {
     }
 
-    public AccountJpaEntity(UUID id, String ownerName, BigDecimal balanceAmount,
+    public AccountJpaEntity(UUID id, String iban, String ownerName, BigDecimal balanceAmount,
                             String balanceCurrency, int version) {
+        this(id, iban, ownerName, null, balanceAmount, balanceCurrency, version);
+    }
+
+    public AccountJpaEntity(UUID id, String iban, String ownerName, String ownerId,
+                            BigDecimal balanceAmount, String balanceCurrency, int version) {
         this.id = id;
+        this.iban = iban;
         this.ownerName = ownerName;
+        this.ownerId = ownerId;
         this.balanceAmount = balanceAmount;
         this.balanceCurrency = balanceCurrency;
         this.version = version;
@@ -65,8 +78,12 @@ public class AccountJpaEntity {
 
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
+    public String getIban() { return iban; }
+    public void setIban(String iban) { this.iban = iban; }
     public String getOwnerName() { return ownerName; }
     public void setOwnerName(String ownerName) { this.ownerName = ownerName; }
+    public String getOwnerId() { return ownerId; }
+    public void setOwnerId(String ownerId) { this.ownerId = ownerId; }
     public BigDecimal getBalanceAmount() { return balanceAmount; }
     public void setBalanceAmount(BigDecimal balanceAmount) { this.balanceAmount = balanceAmount; }
     public String getBalanceCurrency() { return balanceCurrency; }

@@ -21,9 +21,13 @@ public final class TransferMapper {
         Currency srcCcy = Currency.valueOf(e.getSourceCurrency());
         Currency tgtCcy = Currency.valueOf(e.getTargetCurrency());
 
+        // targetAmount is null until FX conversion step completes in the saga
         Money targetAmount = e.getTargetAmount() != null
                 ? new Money(e.getTargetAmount(), tgtCcy) : null;
 
+        // ExchangeRate is null until FX conversion; on reconstitution we use Instant.now()
+        // because the original quote timestamp is not persisted (trade-off: rate table
+        // only stores the numeric rate, not the full ExchangeRate value object).
         ExchangeRate rate = e.getExchangeRate() != null
                 ? new ExchangeRate(srcCcy, tgtCcy, e.getExchangeRate(), Instant.now())
                 : null;
@@ -61,4 +65,3 @@ public final class TransferMapper {
         return e;
     }
 }
-

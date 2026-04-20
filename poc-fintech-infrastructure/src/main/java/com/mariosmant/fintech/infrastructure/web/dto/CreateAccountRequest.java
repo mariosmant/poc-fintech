@@ -9,12 +9,13 @@ import java.math.BigDecimal;
 /**
  * REST request body for creating an account.
  *
+ * <p>Owner identity is determined server-side from the authenticated JWT subject —
+ * never from client-supplied input (NIST IA-2, OWASP IDOR prevention).</p>
+ *
  * @author mariosmant
  * @since 1.0.0
  */
 public record CreateAccountRequest(
-        @NotBlank(message = "Owner name is required")
-        String ownerName,
 
         @NotBlank(message = "Currency is required")
         String currency,

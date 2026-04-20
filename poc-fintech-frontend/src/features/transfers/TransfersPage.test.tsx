@@ -63,6 +63,35 @@ describe('TransfersPage monitoring', () => {
         };
       }
 
+      if (url.endsWith('/api/v1/accounts') && method === 'GET') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: '11111111-1111-1111-1111-111111111111',
+              iban: 'DE89500105170000123456',
+              ownerName: 'alice',
+              ownerId: 'user-1',
+              currency: 'USD',
+              balance: 5000,
+              createdAt: '2026-04-20T00:00:00Z',
+              version: 0,
+            },
+            {
+              id: '22222222-2222-2222-2222-222222222222',
+              iban: 'DE02500105170648489890',
+              ownerName: 'alice',
+              ownerId: 'user-1',
+              currency: 'EUR',
+              balance: 2500,
+              createdAt: '2026-04-20T00:00:00Z',
+              version: 0,
+            },
+          ],
+        };
+      }
+
       if (url.endsWith('/api/v1/transfers/tx-1') && method === 'GET') {
         transferReads += 1;
         return {
@@ -89,10 +118,17 @@ describe('TransfersPage monitoring', () => {
 
     renderPage();
 
-    fireEvent.change(screen.getByPlaceholderText('UUID of source account'), {
+    await waitFor(() => {
+      expect(screen.getAllByText(/alice/).length).toBeGreaterThan(0);
+    });
+
+    const comboboxes = screen.getAllByRole('combobox');
+    // Source account dropdown
+    fireEvent.change(comboboxes[0], {
       target: { value: '11111111-1111-1111-1111-111111111111' },
     });
-    fireEvent.change(screen.getByPlaceholderText('UUID of target account'), {
+    // Target account dropdown (internal mode is the default) — select the second account
+    fireEvent.change(screen.getByLabelText('Target account'), {
       target: { value: '22222222-2222-2222-2222-222222222222' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Initiate Transfer' }));

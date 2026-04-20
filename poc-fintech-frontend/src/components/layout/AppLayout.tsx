@@ -1,5 +1,6 @@
 import { type ReactNode } from 'react';
 import { NavLink } from 'react-router-dom';
+import { useAuth } from '../../auth/AuthProvider';
 
 const navItems = [
   { to: '/', label: 'Dashboard' },
@@ -8,8 +9,10 @@ const navItems = [
   { to: '/ledger', label: 'Ledger' },
 ] as const;
 
-/** Main application layout with sidebar navigation. */
+/** Main application layout with sidebar navigation and user context. */
 export function AppLayout({ children }: { children: ReactNode }) {
+  const { username, logout } = useAuth();
+
   return (
     <div className="flex min-h-screen">
       {/* Sidebar */}
@@ -35,9 +38,22 @@ export function AppLayout({ children }: { children: ReactNode }) {
             </NavLink>
           ))}
         </nav>
-        <div className="p-4 border-t border-primary-700 text-xs text-primary-400">
-          <p>Hexagonal • DDD • CQRS</p>
-          <p>Saga • Outbox • Kafka</p>
+        {/* User info + logout */}
+        <div className="p-4 border-t border-primary-700">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm text-primary-200 truncate">
+              👤 {username ?? 'User'}
+            </span>
+            <button
+              onClick={logout}
+              className="text-xs text-primary-400 hover:text-white transition-colors"
+              title="Sign out"
+            >
+              Logout
+            </button>
+          </div>
+          <p className="text-xs text-primary-400">Hexagonal • DDD • CQRS</p>
+          <p className="text-xs text-primary-400">Saga • Outbox • Kafka</p>
         </div>
       </aside>
 
@@ -48,4 +64,3 @@ export function AppLayout({ children }: { children: ReactNode }) {
     </div>
   );
 }
-

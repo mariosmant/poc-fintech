@@ -80,6 +80,17 @@ public class GlobalExceptionHandler {
         return pd;
     }
 
+    @ExceptionHandler(SecurityException.class)
+    public ProblemDetail handleForbidden(SecurityException ex) {
+        log.warn("Access denied: {}", ex.getMessage());
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(
+                HttpStatus.FORBIDDEN, "You do not have permission to access this resource");
+        pd.setTitle("Access Denied");
+        pd.setType(URI.create("urn:fintech:error:forbidden"));
+        pd.setProperty("timestamp", Instant.now());
+        return pd;
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ProblemDetail handleValidation(MethodArgumentNotValidException ex) {
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(

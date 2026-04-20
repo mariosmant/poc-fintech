@@ -13,6 +13,12 @@ import java.util.UUID;
  */
 public interface OutboxRepository {
 
+    /**
+     * Persists an outbox event atomically within the current transaction.
+     *
+     * @param event the outbox event to save
+     * @return the saved outbox event
+     */
     OutboxEvent save(OutboxEvent event);
 
     /**

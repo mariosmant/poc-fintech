@@ -35,14 +35,38 @@ public class JpaAccountRepositoryAdapter implements AccountRepository {
 
     @Override
     @Transactional(readOnly = true)
+    public Optional<Account> findByIban(String iban) {
+        return jpaRepo.findByIban(iban).map(AccountMapper::toDomain);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<Account> findAll() {
         return jpaRepo.findAllByOrderByCreatedAtDesc()
                 .stream().map(AccountMapper::toDomain).toList();
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<Account> findByOwnerId(String ownerId) {
+        return jpaRepo.findByOwnerIdOrderByCreatedAtDesc(ownerId)
+                .stream().map(AccountMapper::toDomain).toList();
+    }
+
+    @Override
     public Account save(Account account) {
         var entity = AccountMapper.toEntity(account);
+        // Preserve ownerId from existing entity if updating
+        jpaRepo.findById(account.getId().value()).ifPresent(existing ->
+                entity.setOwnerId(existing.getOwnerId()));
+        var saved = jpaRepo.save(entity);
+        return AccountMapper.toDomain(saved);
+    }
+
+    @Override
+    public Account save(Account account, String ownerId) {
+        var entity = AccountMapper.toEntity(account);
+        entity.setOwnerId(ownerId);
         var saved = jpaRepo.save(entity);
         return AccountMapper.toDomain(saved);
     }

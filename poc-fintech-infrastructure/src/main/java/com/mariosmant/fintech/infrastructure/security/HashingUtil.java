@@ -52,7 +52,10 @@ public final class HashingUtil {
      * @return {@code true} if the hash matches
      */
     public static boolean verify(String input, String expectedHash) {
-        return hash(input).equalsIgnoreCase(expectedHash);
+        // Constant-time comparison to prevent timing side-channel attacks (NIST SP 800-131A)
+        byte[] computedBytes = hash(input).toLowerCase().getBytes(StandardCharsets.UTF_8);
+        byte[] expectedBytes = expectedHash.toLowerCase().getBytes(StandardCharsets.UTF_8);
+        return MessageDigest.isEqual(computedBytes, expectedBytes);
     }
 }
 

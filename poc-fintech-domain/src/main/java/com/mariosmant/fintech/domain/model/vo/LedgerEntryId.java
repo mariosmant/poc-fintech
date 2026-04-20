@@ -12,6 +12,12 @@ import java.util.UUID;
  */
 public record LedgerEntryId(UUID value) {
 
+    /**
+     * Compact constructor enforcing non-null constraint.
+     *
+     * @param value the UUID; must not be {@code null}
+     * @throws NullPointerException if {@code value} is {@code null}
+     */
     public LedgerEntryId {
         Objects.requireNonNull(value, "LedgerEntryId value must not be null");
     }
@@ -26,4 +32,3 @@ public record LedgerEntryId(UUID value) {
         return value.toString();
     }
 }
-

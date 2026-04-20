@@ -18,16 +18,19 @@ import java.util.UUID;
  * @param sourceCurrency  the source currency
  * @param targetCurrency  the desired target currency (may differ for FX)
  * @param idempotencyKey  client-supplied key for exactly-once semantics
+ * @param initiatedBy     the authenticated user's ID (from JWT sub claim — never from client input)
  * @author mariosmant
  * @since 1.0.0
  */
 public record InitiateTransferCommand(
         UUID sourceAccountId,
         UUID targetAccountId,
+        String targetIban,
         BigDecimal amount,
         Currency sourceCurrency,
         Currency targetCurrency,
-        String idempotencyKey
+        String idempotencyKey,
+        String initiatedBy
 ) {
 }
 

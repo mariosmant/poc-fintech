@@ -26,11 +26,29 @@ public interface AccountRepository {
     Optional<Account> findById(AccountId id);
 
     /**
+     * Finds an account by its IBAN (ISO 13616). Used when the client initiates a
+     * transfer using a third-party IBAN rather than an internal UUID.
+     *
+     * @param iban the IBAN (normalised, no whitespace)
+     * @return the account, or empty if not found
+     */
+    Optional<Account> findByIban(String iban);
+
+    /**
      * Returns all accounts ordered by most recently created first.
      *
      * @return all accounts
      */
     List<Account> findAll();
+
+    /**
+     * Returns all accounts owned by the given user, ordered by most recently created first.
+     * Used to enforce tenant isolation — users can only see their own accounts.
+     *
+     * @param ownerId the owner's user ID (from JWT sub claim)
+     * @return accounts belonging to the specified owner
+     */
+    List<Account> findByOwnerId(String ownerId);
 
     /**
      * Persists the given account (insert or update).
@@ -40,5 +58,16 @@ public interface AccountRepository {
      * @return the saved account (with updated version)
      */
     Account save(Account account);
-}
 
+    /**
+     * Persists the given account with the authenticated user's ID as owner.
+     * Used for account creation — ownerId comes from JWT, never from client.
+     *
+     * @param account the account to save
+     * @param ownerId the authenticated user ID (from JWT sub claim)
+     * @return the saved account
+     */
+    default Account save(Account account, String ownerId) {
+        return save(account); // default fallback for non-security contexts
+    }
+}

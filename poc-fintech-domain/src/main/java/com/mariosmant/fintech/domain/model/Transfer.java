@@ -1,8 +1,19 @@
 package com.mariosmant.fintech.domain.model;
 
-import com.mariosmant.fintech.domain.event.*;
+import com.mariosmant.fintech.domain.event.FraudCheckCompletedEvent;
+import com.mariosmant.fintech.domain.event.FxConversionCompletedEvent;
+import com.mariosmant.fintech.domain.event.TransferCompletedEvent;
+import com.mariosmant.fintech.domain.event.TransferFailedEvent;
+import com.mariosmant.fintech.domain.event.TransferInitiatedEvent;
 import com.mariosmant.fintech.domain.exception.InvalidTransferStateException;
-import com.mariosmant.fintech.domain.model.vo.*;
+import com.mariosmant.fintech.domain.model.vo.AccountId;
+import com.mariosmant.fintech.domain.model.vo.Currency;
+import com.mariosmant.fintech.domain.model.vo.ExchangeRate;
+import com.mariosmant.fintech.domain.model.vo.FraudCheckResult;
+import com.mariosmant.fintech.domain.model.vo.IdempotencyKey;
+import com.mariosmant.fintech.domain.model.vo.Money;
+import com.mariosmant.fintech.domain.model.vo.TransferId;
+import com.mariosmant.fintech.domain.model.vo.TransferStatus;
 
 import java.time.Instant;
 import java.util.Objects;

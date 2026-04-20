@@ -21,6 +21,7 @@ export type TransferStatus =
 /** Account response DTO. */
 export interface Account {
   id: string;
+  iban: string;
   ownerName: string;
   balance: number;
   currency: Currency;
@@ -31,7 +32,9 @@ export interface Transfer {
   id: string;
   status: TransferStatus;
   sourceAccountId: string;
+  sourceIban: string | null;
   targetAccountId: string;
+  targetIban: string | null;
   sourceAmount: number;
   sourceCurrency: Currency;
   targetAmount: number | null;
@@ -52,17 +55,17 @@ export interface LedgerEntry {
   createdAt: string;
 }
 
-/** Request: create an account. */
+/** Request: create an account. Owner is set server-side from the authenticated JWT. */
 export interface CreateAccountRequest {
-  ownerName: string;
   currency: Currency;
   initialBalance: number;
 }
 
-/** Request: initiate a transfer. */
+/** Request: initiate a transfer. Exactly one of targetAccountId / targetIban must be set. */
 export interface InitiateTransferRequest {
   sourceAccountId: string;
-  targetAccountId: string;
+  targetAccountId?: string;
+  targetIban?: string;
   amount: number;
   sourceCurrency: Currency;
   targetCurrency: Currency;

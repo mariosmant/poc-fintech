@@ -1,10 +1,8 @@
 /**
  * Centralized API client for the POC Fintech backend.
  *
- * Uses fetch() with a base URL that is proxied by Vite in dev mode
- * and can be configured via env variable in production.
- *
- * All functions are typed end-to-end using the shared types from @/types/api.
+ * Uses fetch() with Bearer token authentication from Keycloak.
+ * All requests include the JWT token for authorization.
  */
 import type {
   Account,
@@ -14,6 +12,7 @@ import type {
   ProblemDetail,
   Transfer,
 } from '../types/api';
+import keycloak from '../auth/keycloak';
 
 const BASE = '/api/v1';
 
@@ -29,17 +28,45 @@ export class ApiError extends Error {
 }
 
 /**
- * Generic fetch wrapper with error handling.
+ * Returns authorization headers with the current Keycloak JWT.
+ * Refreshes token if about to expire.
+ */
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  if (keycloak.authenticated) {
+    // Refresh token if it expires within 30 seconds
+    try {
+      await keycloak.updateToken(30);
+    } catch {
+      keycloak.login();
+      throw new Error('Token refresh failed');
+    }
+    return {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${keycloak.token}`,
+    };
+  }
+  return { 'Content-Type': 'application/json' };
+}
+
+/**
+ * Generic fetch wrapper with error handling and JWT auth.
  * Throws {@link ApiError} on non-2xx responses.
  */
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const authHeaders = await getAuthHeaders();
   const res = await fetch(`${BASE}${url}`, {
     ...init,
     headers: {
-      'Content-Type': 'application/json',
+      ...authHeaders,
       ...init?.headers,
     },
   });
+
+  if (res.status === 401) {
+    // Token expired or invalid — redirect to login
+    keycloak.login();
+    throw new Error('Unauthorized');
+  }
 
   if (!res.ok) {
     const problem: ProblemDetail = await res.json().catch(() => ({
@@ -105,4 +132,3 @@ export const ledgerApi = {
   /** Get recent ledger entries for monitoring dashboards. */
   recent: (limit = 100) => request<LedgerEntry[]>(`/ledger/recent?limit=${limit}`),
 };
-

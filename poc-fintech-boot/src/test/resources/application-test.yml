@@ -11,6 +11,14 @@ spring:
   flyway:
     enabled: true
 
+  # Disable OAuth2 resource server for tests (use @WithMockUser or mock JWT)
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:18180/realms/fintech
+          jwk-set-uri: http://localhost:18180/realms/fintech/protocol/openid-connect/certs
+
 logging:
   level:
     com.mariosmant.fintech: DEBUG

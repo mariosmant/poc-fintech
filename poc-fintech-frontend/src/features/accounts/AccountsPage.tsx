@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useAccountsList, useCreateAccount } from '../../hooks/useApi';
 import { ErrorMessage, Spinner } from '../../components/ui/Feedback';
+import { IbanDisplay } from '../../components/ui/IbanDisplay';
 import { formatCurrency } from '../../utils/format';
 import type { Currency } from '../../types/api';
 
@@ -11,17 +12,15 @@ export function AccountsPage() {
   const accountsQuery = useAccountsList();
   const createMutation = useCreateAccount();
 
-  const [ownerName, setOwnerName] = useState('');
   const [currency, setCurrency] = useState<Currency>('USD');
   const [balance, setBalance] = useState('1000');
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     createMutation.mutate(
-      { ownerName, currency, initialBalance: parseFloat(balance) },
+      { currency, initialBalance: parseFloat(balance) },
       {
         onSuccess: () => {
-          setOwnerName('');
           setBalance('1000');
         },
       },
@@ -38,18 +37,6 @@ export function AccountsPage() {
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
         <h3 className="text-lg font-semibold mb-4">Create Account</h3>
         <form onSubmit={handleSubmit} className="flex flex-wrap gap-4 items-end">
-          <div className="flex-1 min-w-[200px]">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Owner Name</label>
-            <input
-              type="text"
-              value={ownerName}
-              onChange={(e) => setOwnerName(e.target.value)}
-              required
-              minLength={2}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-              placeholder="e.g. Alice"
-            />
-          </div>
           <div className="w-32">
             <label className="block text-sm font-medium text-gray-700 mb-1">Currency</label>
             <select
@@ -99,7 +86,7 @@ export function AccountsPage() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                <th className="text-left px-6 py-3 font-medium text-gray-500">ID</th>
+                <th className="text-left px-6 py-3 font-medium text-gray-500">IBAN</th>
                 <th className="text-left px-6 py-3 font-medium text-gray-500">Owner</th>
                 <th className="text-right px-6 py-3 font-medium text-gray-500">Balance</th>
                 <th className="text-left px-6 py-3 font-medium text-gray-500">Currency</th>
@@ -107,8 +94,8 @@ export function AccountsPage() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {accounts.map((a) => (
-                <tr key={a.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-3 font-mono text-xs text-gray-500 break-all">{a.id}</td>
+                <tr key={a.id} className="hover:bg-gray-50" title={`Account UUID: ${a.id}`}>
+                  <td className="px-6 py-3"><IbanDisplay iban={a.iban} /></td>
                   <td className="px-6 py-3 font-medium">{a.ownerName}</td>
                   <td className="px-6 py-3 text-right font-mono">{formatCurrency(a.balance, a.currency)}</td>
                   <td className="px-6 py-3">{a.currency}</td>
