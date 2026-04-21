@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useAccountsList, useCreateAccount } from '../../hooks/useApi';
+import { useAuth } from '../../auth/AuthProvider';
 import { ErrorMessage, Spinner } from '../../components/ui/Feedback';
 import { IbanDisplay } from '../../components/ui/IbanDisplay';
 import { formatCurrency } from '../../utils/format';
@@ -11,6 +12,7 @@ const CURRENCIES: Currency[] = ['USD', 'EUR', 'GBP', 'JPY', 'CHF'];
 export function AccountsPage() {
   const accountsQuery = useAccountsList();
   const createMutation = useCreateAccount();
+  const { isAdmin } = useAuth();
 
   const [currency, setCurrency] = useState<Currency>('USD');
   const [balance, setBalance] = useState('1000');
@@ -31,7 +33,14 @@ export function AccountsPage() {
 
   return (
     <div>
-      <h2 className="text-2xl font-bold text-gray-900 mb-6">Accounts</h2>
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-2xl font-bold text-gray-900">Accounts</h2>
+        {isAdmin && (
+          <span className="px-2.5 py-1 text-xs font-medium bg-amber-100 text-amber-800 rounded-full">
+            Admin mode — viewing all accounts across all users
+          </span>
+        )}
+      </div>
 
       {/* Create Account Form */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">

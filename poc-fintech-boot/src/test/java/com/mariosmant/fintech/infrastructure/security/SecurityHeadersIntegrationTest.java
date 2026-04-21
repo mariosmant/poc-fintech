@@ -77,11 +77,30 @@ class SecurityHeadersIntegrationTest {
     }
 
     @Test
-    @DisplayName("Should include Cache-Control: no-cache, no-store")
+    @DisplayName("Should include Cache-Control: no-store on success responses (NIST SC-28)")
     void shouldIncludeCacheControl() throws Exception {
         mockMvc.perform(get("/api/v1/transfers/00000000-0000-0000-0000-000000000000")
                         .with(jwt().jwt(j -> j.subject("test-user"))))
-                .andExpect(header().exists("Cache-Control"));
+                // Spring Security default cache-control header writer —
+                // fintech requirement: sensitive financial data MUST NOT be cached.
+                .andExpect(header().string("Cache-Control",
+                        org.hamcrest.Matchers.containsString("no-store")))
+                .andExpect(header().string("Cache-Control",
+                        org.hamcrest.Matchers.containsString("no-cache")))
+                .andExpect(header().string("Pragma", "no-cache"))
+                .andExpect(header().string("Expires", "0"));
+    }
+
+    @Test
+    @DisplayName("Should include Cache-Control: no-store on 4xx error responses")
+    void shouldIncludeCacheControlOnErrorResponses() throws Exception {
+        // No JWT → 401 Unauthorized (error path goes through GlobalExceptionHandler /
+        // Spring Security entry point). Even error responses must not be cached —
+        // otherwise an intermediate proxy could serve "401" to a later, authenticated
+        // request, or cache a problem-detail payload exposing correlation IDs.
+        mockMvc.perform(get("/api/v1/transfers/00000000-0000-0000-0000-000000000000"))
+                .andExpect(header().string("Cache-Control",
+                        org.hamcrest.Matchers.containsString("no-store")));
     }
 }
 

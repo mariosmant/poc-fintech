@@ -19,6 +19,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -41,6 +42,7 @@ import java.util.UUID;
 @RequestMapping("/api/v1/transfers")
 @Tag(name = "Transfers", description = "Money transfer operations — CQRS command & query endpoints")
 @SecurityRequirement(name = "bearer-jwt")
+@PreAuthorize("hasRole('USER')")
 public class TransferController {
 
     private final InitiateTransferUseCase initiateTransferUseCase;
@@ -110,13 +112,18 @@ public class TransferController {
             @Parameter(description = "UUID of the transfer", required = true,
                     example = "550e8400-e29b-41d4-a716-446655440000")
             @PathVariable UUID id) {
-        return ResponseEntity.ok(transferQueryUseCase.findById(id));
+        if (SecurityContextUtil.isAdmin()) {
+            return ResponseEntity.ok(transferQueryUseCase.findById(id));
+        }
+        String userId = SecurityContextUtil.getAuthenticatedUserId();
+        return ResponseEntity.ok(transferQueryUseCase.findByIdForUser(id, userId));
     }
 
-    /** Returns latest transfers for monitoring pages. */
+    /** Returns latest transfers for monitoring pages. Admins see all, users see only their own. */
     @GetMapping
     @Operation(summary = "List latest transfers",
-            description = "Returns latest transfers ordered by most recent first.")
+            description = "Returns latest transfers ordered by most recent first. "
+                    + "Non-admin callers receive only transfers touching one of their own accounts.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Transfers retrieved",
                     content = @Content(schema = @Schema(implementation = TransferResponse.class)))
@@ -124,7 +131,11 @@ public class TransferController {
     public ResponseEntity<List<TransferResponse>> listTransfers(
             @RequestParam(name = "limit", defaultValue = "50") int limit) {
         int boundedLimit = Math.max(1, Math.min(limit, 200));
-        return ResponseEntity.ok(transferQueryUseCase.findLatest(boundedLimit));
+        if (SecurityContextUtil.isAdmin()) {
+            return ResponseEntity.ok(transferQueryUseCase.findLatest(boundedLimit));
+        }
+        String userId = SecurityContextUtil.getAuthenticatedUserId();
+        return ResponseEntity.ok(transferQueryUseCase.findLatestForUser(userId, boundedLimit));
     }
 }
 

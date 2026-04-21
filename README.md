@@ -267,3 +267,4 @@ poc-fintech/
 | V5 | `audit_log` | Security audit trail (NIST AU-2) |
 | V6 | `accounts.owner_id`, `transfers.initiated_by` | JWT user binding |
 | V7 | `dead_letter_queue` | Failed Kafka messages for manual replay |
+

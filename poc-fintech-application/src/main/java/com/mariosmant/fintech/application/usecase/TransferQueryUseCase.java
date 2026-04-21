@@ -1,6 +1,7 @@
 package com.mariosmant.fintech.application.usecase;
 
 import com.mariosmant.fintech.application.dto.TransferResponse;
+import com.mariosmant.fintech.domain.exception.ResourceAccessDeniedException;
 import com.mariosmant.fintech.domain.model.Account;
 import com.mariosmant.fintech.domain.model.Transfer;
 import com.mariosmant.fintech.domain.model.vo.TransferId;
@@ -8,8 +9,10 @@ import com.mariosmant.fintech.domain.port.outbound.AccountRepository;
 import com.mariosmant.fintech.domain.port.outbound.TransferRepository;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -50,6 +53,60 @@ public class TransferQueryUseCase {
         List<Transfer> transfers = transferRepository.findLatest(limit);
         Map<UUID, String> ibans = loadIbans(transfers);
         return transfers.stream().map(t -> toResponse(t, ibans)).toList();
+    }
+
+    /**
+     * Returns the latest transfers the given user is involved in — either because
+     * they initiated the transfer, or because one of the two accounts belongs to
+     * them. Used by the non-admin read path to enforce tenant isolation.
+     *
+     * @param userId owning user's id (JWT {@code sub} claim)
+     * @param limit  max rows after filtering
+     */
+    public List<TransferResponse> findLatestForUser(String userId, int limit) {
+        Set<UUID> userAccountIds = userAccountIdSet(userId);
+        // Over-fetch so that user-involvement filtering still returns a useful page.
+        int overFetch = Math.min(Math.max(limit * 5, limit), 1_000);
+        List<Transfer> visible = transferRepository.findLatest(overFetch).stream()
+                .filter(t -> isUserInvolved(t, userId, userAccountIds))
+                .limit(limit)
+                .toList();
+        Map<UUID, String> ibans = loadIbans(visible);
+        return visible.stream().map(t -> toResponse(t, ibans)).toList();
+    }
+
+    /**
+     * Returns the transfer if the user is involved in it (initiator or source/target owner),
+     * otherwise throws {@link org.springframework.security.access.AccessDeniedException}
+     * so the global exception handler maps it to {@code 403}.
+     */
+    public TransferResponse findByIdForUser(UUID transferId, String userId) {
+        Transfer t = transferRepository.findById(new TransferId(transferId))
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Transfer not found: " + transferId));
+        if (!isUserInvolved(t, userId, userAccountIdSet(userId))) {
+            throw new ResourceAccessDeniedException(
+                    "Transfer is not visible to the current user");
+        }
+        Map<UUID, String> ibans = loadIbans(List.of(t));
+        return toResponse(t, ibans);
+    }
+
+    private Set<UUID> userAccountIdSet(String userId) {
+        Set<UUID> ids = new HashSet<>();
+        for (Account a : accountRepository.findByOwnerId(userId)) {
+            ids.add(a.getId().value());
+        }
+        return ids;
+    }
+
+    private boolean isUserInvolved(Transfer t, String userId, Set<UUID> userAccountIds) {
+        // Ownership is inferred from source/target account ownership; the domain Transfer
+        // aggregate intentionally does not expose the technical `initiatedBy` column.
+        // Because InitiateTransferUseCase only allows initiation from an account the caller
+        // owns, every transfer a user initiated is already covered by this check.
+        return userAccountIds.contains(t.getSourceAccountId().value())
+                || userAccountIds.contains(t.getTargetAccountId().value());
     }
 
     private Map<UUID, String> loadIbans(List<Transfer> transfers) {

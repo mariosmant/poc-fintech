@@ -40,8 +40,10 @@ public class BeanConfig {
     }
 
     @Bean
-    public LedgerQueryUseCase ledgerQueryUseCase(LedgerRepository ledgerRepository) {
-        return new LedgerQueryUseCase(ledgerRepository);
+    public LedgerQueryUseCase ledgerQueryUseCase(LedgerRepository ledgerRepository,
+                                                 AccountRepository accountRepository,
+                                                 TransferRepository transferRepository) {
+        return new LedgerQueryUseCase(ledgerRepository, accountRepository, transferRepository);
     }
 
     @Bean

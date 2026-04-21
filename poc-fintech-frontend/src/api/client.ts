@@ -13,6 +13,7 @@ import type {
   Transfer,
 } from '../types/api';
 import keycloak from '../auth/keycloak';
+import { redirectToLogin } from '../auth/loginGuard';
 
 const BASE = '/api/v1';
 
@@ -37,7 +38,7 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
     try {
       await keycloak.updateToken(30);
     } catch {
-      keycloak.login();
+      redirectToLogin();
       throw new Error('Token refresh failed');
     }
     return {
@@ -63,8 +64,8 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   });
 
   if (res.status === 401) {
-    // Token expired or invalid — redirect to login
-    keycloak.login();
+    // Token expired or invalid — redirect to login (single-flight)
+    redirectToLogin();
     throw new Error('Unauthorized');
   }
 

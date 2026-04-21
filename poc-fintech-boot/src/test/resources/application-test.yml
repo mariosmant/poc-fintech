@@ -23,3 +23,15 @@ logging:
   level:
     com.mariosmant.fintech: DEBUG
 
+# JWT hardening config — test values mirror the mock JwtDecoder in TestSecurityConfig.
+# JwtDecoderConfig is @Profile("!test") so these values drive only assertion helpers
+# / future integration tests that exercise the strict validator chain directly.
+app:
+  security:
+    jwt:
+      audiences: poc-fintech-api
+      clock-skew-seconds: 60
+      allowed-algorithms: RS256,PS256
+      required-claims: sub,iat,exp
+      authorized-party: poc-fintech-bff
+

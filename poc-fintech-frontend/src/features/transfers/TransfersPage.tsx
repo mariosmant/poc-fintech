@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { useAccountsList, useInitiateTransfer, useMonitoredTransfers, useTransfersList } from '../../hooks/useApi';
+import {
+  useAccountsList,
+  useAccountsLookup,
+  useInitiateTransfer,
+  useMonitoredTransfers,
+  useTransfersList,
+} from '../../hooks/useApi';
+import { useAuth } from '../../auth/AuthProvider';
 import { ErrorMessage, Spinner } from '../../components/ui/Feedback';
 import { IbanDisplay } from '../../components/ui/IbanDisplay';
 import { StatusBadge } from '../../components/ui/StatusBadge';
@@ -22,6 +29,7 @@ export function TransfersPage() {
   const transfersListQuery = useTransfersList(50);
   const initiateMutation = useInitiateTransfer();
   const accountsQuery = useAccountsList();
+  const { isAdmin } = useAuth();
 
   // Form state
   const [sourceId, setSourceId] = useState('');
@@ -69,6 +77,20 @@ export function TransfersPage() {
     [selectedTransferId, transfers],
   );
 
+  // Enrich visible transfers with source / target owner names via the shared
+  // account cache. Non-admin callers only ever see transfers that touch one of
+  // their own accounts (backend-enforced), so at least one side resolves from
+  // the user's own list; the counter-party resolves lazily via per-id fetches.
+  const transferAccountIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const t of transfers) {
+      if (t.sourceAccountId) ids.add(t.sourceAccountId);
+      if (t.targetAccountId) ids.add(t.targetAccountId);
+    }
+    return Array.from(ids);
+  }, [transfers]);
+  const accountsById = useAccountsLookup(transferAccountIds);
+
   useEffect(() => {
     const firstTransfer = transfers[0];
     if (!selectedTransferId && firstTransfer) {
@@ -99,7 +121,14 @@ export function TransfersPage() {
 
   return (
     <div>
-      <h2 className="text-2xl font-bold text-gray-900 mb-6">Transfers</h2>
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-2xl font-bold text-gray-900">Transfers</h2>
+        {isAdmin && (
+          <span className="px-2.5 py-1 text-xs font-medium bg-amber-100 text-amber-800 rounded-full">
+            Admin mode — viewing all transfers across all users
+          </span>
+        )}
+      </div>
 
       {/* Initiate Transfer Form */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
@@ -280,33 +309,43 @@ export function TransfersPage() {
                 <th className="text-left px-4 py-3 font-medium text-gray-500">Status</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-500">Amount</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-500">FX</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500">Source → Target</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500">Source (IBAN / Owner)</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500">Target (IBAN / Owner)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {transfers.map((t) => (
-                <tr
-                  key={t.id}
-                  className="hover:bg-gray-50 cursor-pointer"
-                  onClick={() => setSelectedTransferId(t.id)}
-                >
-                  <td className="px-4 py-3 font-mono text-xs text-gray-500 break-all">{t.id}</td>
-                  <td className="px-4 py-3"><StatusBadge status={t.status} /></td>
-                  <td className="px-4 py-3 text-right font-mono">
-                    {formatCurrency(t.sourceAmount, t.sourceCurrency)}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-gray-500">
-                    {t.sourceCurrency} → {t.targetCurrency}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-gray-600">
-                    <div className="flex flex-col gap-1">
-                      <IbanDisplay iban={t.sourceIban} label="Source IBAN" />
-                      <span className="text-gray-400">↓</span>
-                      <IbanDisplay iban={t.targetIban} label="Target IBAN" />
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {transfers.map((t) => {
+                const srcOwner = accountsById.get(t.sourceAccountId)?.ownerName;
+                const tgtOwner = accountsById.get(t.targetAccountId)?.ownerName;
+                return (
+                  <tr
+                    key={t.id}
+                    className="hover:bg-gray-50 cursor-pointer align-top"
+                    onClick={() => setSelectedTransferId(t.id)}
+                  >
+                    <td className="px-4 py-3 font-mono text-xs text-gray-500 break-all">{t.id}</td>
+                    <td className="px-4 py-3"><StatusBadge status={t.status} /></td>
+                    <td className="px-4 py-3 text-right font-mono">
+                      {formatCurrency(t.sourceAmount, t.sourceCurrency)}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-500">
+                      {t.sourceCurrency} → {t.targetCurrency}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-600">
+                      <div className="flex flex-col gap-0.5">
+                        <IbanDisplay iban={t.sourceIban} label="Source IBAN" />
+                        <span className="text-gray-700">{srcOwner ?? '—'}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-600">
+                      <div className="flex flex-col gap-0.5">
+                        <IbanDisplay iban={t.targetIban} label="Target IBAN" />
+                        <span className="text-gray-700">{tgtOwner ?? '—'}</span>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

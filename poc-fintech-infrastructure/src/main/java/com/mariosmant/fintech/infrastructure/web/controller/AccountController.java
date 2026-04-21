@@ -18,6 +18,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -34,6 +35,7 @@ import java.util.UUID;
 @RequestMapping("/api/v1/accounts")
 @Tag(name = "Accounts", description = "Account management operations — create and query financial accounts")
 @SecurityRequirement(name = "bearer-jwt")
+@PreAuthorize("hasRole('USER')")
 public class AccountController {
 
     private final AccountUseCase accountUseCase;
@@ -89,15 +91,19 @@ public class AccountController {
         return ResponseEntity.ok(accountUseCase.findById(id));
     }
 
-    /** Returns accounts owned by the authenticated user, ordered by creation date descending. */
+    /** Returns accounts: all for admins, only own-owned for regular users. */
     @GetMapping
-    @Operation(summary = "List my accounts",
-            description = "Returns all accounts owned by the authenticated user.")
+    @Operation(summary = "List accounts",
+            description = "Returns all accounts owned by the authenticated user. "
+                    + "Admins receive every account in the system (for reconciliation / support).")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Accounts retrieved",
                     content = @Content(schema = @Schema(implementation = AccountResponse.class)))
     })
     public ResponseEntity<List<AccountResponse>> listAccounts() {
+        if (SecurityContextUtil.isAdmin()) {
+            return ResponseEntity.ok(accountUseCase.findAll());
+        }
         String userId = SecurityContextUtil.getAuthenticatedUserId();
         return ResponseEntity.ok(accountUseCase.findByOwnerId(userId));
     }

@@ -14,7 +14,7 @@ import java.util.UUID;
  * @author mariosmant
  * @since 1.0.0
  */
-public record AccountId(UUID value) {
+public record AccountId(UUID value) implements HasId<UUID> {
 
     /**
      * Constructs an {@code AccountId} ensuring the value is non-null.

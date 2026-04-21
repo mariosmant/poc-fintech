@@ -91,6 +91,20 @@ management:
   endpoint:
     health:
       show-details: when-authorized
+  # /actuator/info contributors — powered by build-info.properties and git.properties
+  # generated at build time (see poc-fintech-boot/pom.xml).
+  info:
+    build:
+      enabled: true
+    git:
+      enabled: true
+      mode: full                      # Exposes full commit metadata (branch, id, time, tags)
+    env:
+      enabled: true                   # Allows app-scoped properties prefixed 'info.*' below
+    java:
+      enabled: true
+    os:
+      enabled: true
   metrics:
     tags:
       application: poc-fintech
@@ -156,12 +170,78 @@ app:
     issuer-uri: http://localhost:8180/realms/fintech
   rate-limit:
     requests-per-minute: 100
+  # ── Ultra-strict JWT validation (see JwtValidators / JwtDecoderConfig) ──
+  # audiences          — comma-separated; AT LEAST ONE must appear in the token 'aud'.
+  #                      Keycloak must emit this via an audience client-scope mapper
+  #                      (see docker/keycloak/fintech-realm.json → clientScopes[].audience).
+  # clock-skew-seconds — max accepted drift for 'exp'/'nbf' (keep small).
+  # allowed-algorithms — comma-separated JWS algs; pins the decoder against alg-confusion.
+  # required-claims    — comma-separated claims that MUST be present and non-blank.
+  # authorized-party   — optional expected 'azp' (OAuth2 client id); blank = skip check.
+  security:
+    jwt:
+      audiences: poc-fintech-api
+      clock-skew-seconds: 30
+      allowed-algorithms: RS256,PS256
+      required-claims: sub,iat,exp
+      authorized-party: poc-fintech-bff
 
-# ── Logging (MDC-enriched pattern with userId, requestId, traceId) ───────
+# ── Logging (MDC-enriched pattern with userId, requestId, traceId, spanId) ─
+# The default console pattern is developer-friendly. For production, activate
+# the 'json' profile (e.g. SPRING_PROFILES_ACTIVE=json) to emit Elastic Common
+# Schema (ECS) JSON — one object per log event — that can be ingested by
+# Fluent Bit / Filebeat / Vector without any transformation rules.
 logging:
   level:
     com.mariosmant.fintech: DEBUG
     org.springframework.kafka: WARN
     org.hibernate.SQL: WARN
   pattern:
-    console: "%d{ISO8601} [%thread] %-5level [userId=%X{userId:-anonymous}] [requestId=%X{requestId:-}] [traceId=%X{traceId:-}] %logger{36} - %msg%n"
+    console: "%d{ISO8601} [%thread] %-5level [userId=%X{userId:-anonymous}] [requestId=%X{requestId:-}] [traceId=%X{traceId:-}] [spanId=%X{spanId:-}] %logger{36} - %msg%n"
+
+# ── Static /actuator/info contributors (env) ─────────────────────────────
+# Surfaced by management.info.env.enabled=true. Keep these NON-SENSITIVE:
+# /actuator/info is publicly reachable in this POC and MUST NOT leak secrets.
+info:
+  app:
+    name: ${spring.application.name}
+    description: "@project.description@"
+    version: "@project.version@"
+    encoding: "@project.build.sourceEncoding@"
+    java:
+      source: "@java.version@"
+      target: "@java.version@"
+  architecture:
+    style: "Hexagonal (Ports & Adapters) + DDD + CQRS"
+    patterns: "Transactional Outbox, Saga (orchestrated), Double-Entry Ledger"
+
+---
+# ──────────────────────────────────────────────────────────────────────────
+# Profile: json
+# Activate with SPRING_PROFILES_ACTIVE=json (can be combined with other profiles).
+# Emits one JSON object per log event using Spring Boot 3.4+ native structured
+# logging (org.springframework.boot.logging.structured.ecs.ElasticCommonSchema).
+# All MDC keys (requestId, traceId, spanId, userId, username) are included
+# automatically as top-level ECS fields.
+# ──────────────────────────────────────────────────────────────────────────
+spring:
+  config:
+    activate:
+      on-profile: json
+
+logging:
+  structured:
+    format:
+      console: ecs          # Elastic Common Schema — widest tool support
+    ecs:
+      service:
+        name: ${spring.application.name:poc-fintech}
+        version: "@project.version@"
+        environment: ${ENVIRONMENT:unknown}
+  # Remove the pretty console pattern in JSON mode — the structured formatter
+  # owns the entire output stream; leaving 'pattern.console' set here would
+  # produce a mixed-format stream that breaks log shippers.
+  pattern:
+    console:                # (intentionally empty — structured formatter wins)
+
+

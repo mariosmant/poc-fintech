@@ -3,25 +3,18 @@ package com.mariosmant.fintech.infrastructure.security;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
-import org.springframework.core.convert.converter.Converter;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 import org.springframework.security.web.header.writers.XXssProtectionHeaderWriter;
 import org.springframework.web.cors.CorsConfigurationSource;
 
-import java.util.*;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /**
  * Security configuration aligned with NIST SP 800-53, SOG-IS Crypto Evaluation Scheme,
@@ -144,44 +137,14 @@ public class SecurityConfig {
 
     /**
      * Converts Keycloak JWT claims to Spring Security authorities.
-     * Extracts roles from both realm_access and resource_access claims.
+     * Extracts roles from both {@code realm_access.roles} and
+     * {@code resource_access.<client>.roles}. Logic is shared with the
+     * test filter chain via {@link KeycloakJwtAuthoritiesConverter}, so
+     * {@code @PreAuthorize("hasRole('USER')")} checks behave identically
+     * in production and in integration tests.
      */
     @Bean
     public JwtAuthenticationConverter jwtAuthenticationConverter() {
-        JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
-        converter.setJwtGrantedAuthoritiesConverter(keycloakGrantedAuthoritiesConverter());
-        return converter;
-    }
-
-    /**
-     * Extracts Keycloak realm roles and resource roles from JWT claims
-     * and maps them to Spring Security GrantedAuthority with ROLE_ prefix.
-     */
-    private Converter<Jwt, Collection<GrantedAuthority>> keycloakGrantedAuthoritiesConverter() {
-        return jwt -> {
-            // Extract realm roles
-            Stream<String> realmRoles = Optional.ofNullable(jwt.getClaimAsMap("realm_access"))
-                    .map(ra -> ra.get("roles"))
-                    .filter(List.class::isInstance)
-                    .map(roles -> ((List<?>) roles).stream()
-                            .filter(String.class::isInstance)
-                            .map(String.class::cast))
-                    .orElse(Stream.empty());
-
-            // Extract client-specific roles
-            Stream<String> clientRoles = Optional.ofNullable(jwt.getClaimAsMap("resource_access"))
-                    .map(ra -> ra.get("poc-fintech-bff"))
-                    .filter(Map.class::isInstance)
-                    .map(client -> ((Map<?, ?>) client).get("roles"))
-                    .filter(List.class::isInstance)
-                    .map(roles -> ((List<?>) roles).stream()
-                            .filter(String.class::isInstance)
-                            .map(String.class::cast))
-                    .orElse(Stream.empty());
-
-            return Stream.concat(realmRoles, clientRoles)
-                    .map(role -> new SimpleGrantedAuthority("ROLE_" + role.toUpperCase()))
-                    .collect(Collectors.toSet());
-        };
+        return KeycloakJwtAuthoritiesConverter.jwtAuthenticationConverter();
     }
 }

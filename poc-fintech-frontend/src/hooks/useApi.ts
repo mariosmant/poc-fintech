@@ -1,7 +1,9 @@
 /** Reusable React Query hooks for fintech API calls. */
+import { useEffect, useMemo } from 'react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { accountsApi, transfersApi, ledgerApi } from '../api/client';
 import type {
+  Account,
   CreateAccountRequest,
   InitiateTransferRequest,
   Transfer,
@@ -130,5 +132,92 @@ export function useLedgerRecent(limit = 100) {
     queryFn: () => ledgerApi.recent(limit),
     refetchOnMount: 'always',
   });
+}
+
+// ── Ledger enrichment helpers ─────────────────────────────────────────
+
+/**
+ * Fetches {@link Account} records for every id in `ids`, sharing the React Query
+ * cache with {@link useAccount}. Results are returned as a `Map<id, Account>`.
+ *
+ * The user's own accounts (already loaded by {@link useAccountsList}) are seeded
+ * into the individual-query cache so they do not trigger redundant network calls;
+ * accounts that belong to other users (e.g. the counter-party on a cross-user
+ * transfer) are fetched lazily on demand. A missing/403 response simply leaves
+ * the account absent from the map and the caller can fall back to the UUID.
+ */
+export function useAccountsLookup(ids: readonly string[]): Map<string, Account> {
+  const qc = useQueryClient();
+  const ownAccountsQuery = useAccountsList();
+
+  // Seed the per-id cache so we do not refetch accounts we already loaded in bulk.
+  useEffect(() => {
+    for (const account of ownAccountsQuery.data ?? []) {
+      qc.setQueryData(queryKeys.account(account.id), account);
+    }
+  }, [ownAccountsQuery.data, qc]);
+
+  const uniqueIds = useMemo(() => Array.from(new Set(ids.filter(Boolean))), [ids]);
+
+  const queries = useQueries({
+    queries: uniqueIds.map((id) => ({
+      queryKey: queryKeys.account(id),
+      queryFn: () => accountsApi.getById(id),
+      enabled: !!id,
+      staleTime: 60_000,
+      retry: false,
+    })),
+  });
+
+  return useMemo(() => {
+    const map = new Map<string, Account>();
+    for (const account of ownAccountsQuery.data ?? []) {
+      map.set(account.id, account);
+    }
+    uniqueIds.forEach((id, index) => {
+      const data = queries[index]?.data;
+      if (data) map.set(id, data);
+    });
+    return map;
+  }, [ownAccountsQuery.data, queries, uniqueIds]);
+}
+
+/**
+ * Fetches {@link Transfer} records for every id in `ids`, sharing the React Query
+ * cache with {@link useTransfer}. Results are returned as a `Map<id, Transfer>`.
+ */
+export function useTransfersLookup(ids: readonly string[]): Map<string, Transfer> {
+  const qc = useQueryClient();
+  const listQuery = useTransfersList();
+
+  useEffect(() => {
+    for (const transfer of listQuery.data ?? []) {
+      qc.setQueryData(queryKeys.transfer(transfer.id), transfer);
+    }
+  }, [listQuery.data, qc]);
+
+  const uniqueIds = useMemo(() => Array.from(new Set(ids.filter(Boolean))), [ids]);
+
+  const queries = useQueries({
+    queries: uniqueIds.map((id) => ({
+      queryKey: queryKeys.transfer(id),
+      queryFn: () => transfersApi.getById(id),
+      enabled: !!id,
+      staleTime: 60_000,
+      retry: false,
+    })),
+  });
+
+  return useMemo(() => {
+    const map = new Map<string, Transfer>();
+    for (const transfer of listQuery.data ?? []) {
+      map.set(transfer.id, transfer);
+    }
+    uniqueIds.forEach((id, index) => {
+      const data = queries[index]?.data;
+      if (data) map.set(id, data);
+    });
+    return map;
+  }, [listQuery.data, queries, uniqueIds]);
 }
 

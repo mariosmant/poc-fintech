@@ -2,6 +2,7 @@ package com.mariosmant.fintech.infrastructure.web.controller;
 
 import com.mariosmant.fintech.application.dto.LedgerEntryResponse;
 import com.mariosmant.fintech.application.usecase.LedgerQueryUseCase;
+import com.mariosmant.fintech.infrastructure.security.SecurityContextUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.ArraySchema;
@@ -13,6 +14,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -29,6 +31,7 @@ import java.util.UUID;
 @RequestMapping("/api/v1/ledger")
 @Tag(name = "Ledger", description = "Double-entry accounting ledger queries — immutable audit trail")
 @SecurityRequirement(name = "bearer-jwt")
+@PreAuthorize("hasRole('USER')")
 public class LedgerController {
 
     private final LedgerQueryUseCase ledgerQueryUseCase;
@@ -58,7 +61,11 @@ public class LedgerController {
             @Parameter(description = "UUID of the account", required = true,
                     example = "550e8400-e29b-41d4-a716-446655440000")
             @PathVariable UUID accountId) {
-        return ResponseEntity.ok(ledgerQueryUseCase.findByAccountId(accountId));
+        if (SecurityContextUtil.isAdmin()) {
+            return ResponseEntity.ok(ledgerQueryUseCase.findByAccountId(accountId));
+        }
+        String userId = SecurityContextUtil.getAuthenticatedUserId();
+        return ResponseEntity.ok(ledgerQueryUseCase.findByAccountIdForUser(accountId, userId));
     }
 
     /**
@@ -82,17 +89,26 @@ public class LedgerController {
             @Parameter(description = "UUID of the transfer", required = true,
                     example = "550e8400-e29b-41d4-a716-446655440000")
             @PathVariable UUID transferId) {
-        return ResponseEntity.ok(ledgerQueryUseCase.findByTransferId(transferId));
+        if (SecurityContextUtil.isAdmin()) {
+            return ResponseEntity.ok(ledgerQueryUseCase.findByTransferId(transferId));
+        }
+        String userId = SecurityContextUtil.getAuthenticatedUserId();
+        return ResponseEntity.ok(ledgerQueryUseCase.findByTransferIdForUser(transferId, userId));
     }
 
-    /** Returns recent ledger entries for monitoring screens. */
+    /** Returns recent ledger entries for monitoring screens. Admins see all, users see only their own. */
     @GetMapping("/recent")
     @Operation(summary = "Get recent ledger entries",
-            description = "Returns latest ledger entries ordered by creation time descending.")
+            description = "Returns latest ledger entries ordered by creation time descending. "
+                    + "Non-admin callers only see entries touching one of their own accounts.")
     public ResponseEntity<List<LedgerEntryResponse>> getRecent(
             @RequestParam(name = "limit", defaultValue = "100") int limit) {
         int boundedLimit = Math.max(1, Math.min(limit, 500));
-        return ResponseEntity.ok(ledgerQueryUseCase.findRecent(boundedLimit));
+        if (SecurityContextUtil.isAdmin()) {
+            return ResponseEntity.ok(ledgerQueryUseCase.findRecent(boundedLimit));
+        }
+        String userId = SecurityContextUtil.getAuthenticatedUserId();
+        return ResponseEntity.ok(ledgerQueryUseCase.findRecentForUser(userId, boundedLimit));
     }
 }
 

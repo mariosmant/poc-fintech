@@ -59,5 +59,24 @@ public final class SecurityContextUtil {
         }
         throw new IllegalStateException("No JWT token in security context");
     }
+
+    /**
+     * Returns {@code true} if the caller has the {@code ROLE_ADMIN} authority,
+     * as mapped by {@code KeycloakJwtAuthoritiesConverter} from the Keycloak
+     * realm role {@code admin}. Used by read endpoints to decide whether the
+     * caller is allowed to observe data owned by other users.
+     *
+     * <p>Does <b>not</b> short-circuit any {@code @PreAuthorize} check — it is a
+     * complement, not a substitute, and must always be combined with an explicit
+     * per-resource authorization decision.</p>
+     */
+    public static boolean isAdmin() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) {
+            return false;
+        }
+        return auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
+    }
 }
 

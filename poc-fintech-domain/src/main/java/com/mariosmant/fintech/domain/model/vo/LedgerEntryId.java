@@ -10,7 +10,7 @@ import java.util.UUID;
  * @author mariosmant
  * @since 1.0.0
  */
-public record LedgerEntryId(UUID value) {
+public record LedgerEntryId(UUID value) implements HasId<UUID> {
 
     /**
      * Compact constructor enforcing non-null constraint.
