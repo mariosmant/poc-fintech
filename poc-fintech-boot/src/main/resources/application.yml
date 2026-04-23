@@ -14,9 +14,15 @@ server:
   servlet:
     session:
       cookie:
-        http-only: true               # Prevent XSS cookie theft
-        secure: true                  # Cookies only over HTTPS
-        same-site: strict             # CSRF protection via SameSite
+        # __Host- prefix binds the cookie to the exact origin (RFC 6265bis §4.1.3.2):
+        # requires Secure, Path=/, and forbids Domain. Blocks subdomain / cross-origin
+        # cookie injection. Works transparently because Spring Session / Tomcat set
+        # Path=/ by default and we set Secure=true below.
+        name: __Host-SESSION
+        http-only: true               # Prevent XSS cookie theft (OWASP ASVS V3.4.1)
+        secure: true                  # Cookies only over HTTPS (NIST SC-8)
+        same-site: strict             # CSRF protection via SameSite (OWASP ASVS V3.4.3)
+        path: /                       # Required for __Host- prefix
 
 spring:
   application:
@@ -179,6 +185,12 @@ app:
   # required-claims    — comma-separated claims that MUST be present and non-blank.
   # authorized-party   — optional expected 'azp' (OAuth2 client id); blank = skip check.
   security:
+    # CSRF double-submit cookie (enabled automatically under the `bff` profile).
+    # When true, SecurityConfig installs a CookieCsrfTokenRepository that issues a
+    # `__Host-XSRF-TOKEN` cookie (Secure, Path=/, SameSite=Strict, HttpOnly=false).
+    # The SPA reads that cookie and echoes it in the `X-XSRF-TOKEN` request header.
+    csrf:
+      enabled: false
     jwt:
       audiences: poc-fintech-api
       clock-skew-seconds: 30
@@ -245,3 +257,21 @@ logging:
     console:                # (intentionally empty — structured formatter wins)
 
 
+---
+# ──────────────────────────────────────────────────────────────────────────
+# Profile: bff
+# Activate with SPRING_PROFILES_ACTIVE=bff (combinable with `json`).
+# Turns on CSRF double-submit cookie protection. Intended for the Phase-2
+# migration where the React SPA calls the backend with session cookies on
+# the same origin (via reverse proxy) and the backend is the OAuth2 Client
+# that holds the access/refresh token server-side. See ADR-0010.
+# ──────────────────────────────────────────────────────────────────────────
+spring:
+  config:
+    activate:
+      on-profile: bff
+
+app:
+  security:
+    csrf:
+      enabled: true
