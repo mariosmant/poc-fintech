@@ -16,23 +16,72 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * Saga Orchestrator for the money-transfer flow.
+ * {@code TransferSagaOrchestrator} — orchestrated Saga controlling the
+ * multi-step money-transfer workflow.
  *
- * <p>Orchestrates the following steps:
+ * <h2>Architecture pattern: Orchestrated Saga (Richardson, Microservices Patterns §4)</h2>
+ * <p>A saga is a sequence of local transactions where each local transaction
+ * publishes a domain event that triggers the next step. The <b>orchestrator
+ * variant</b> (this class) centralises the decision of "what next" in one
+ * place — the alternative (<b>choreography</b>) spreads it across the
+ * participants and makes long-range reasoning hard. We pay the cost of one
+ * extra hop for the benefit of a single auditable control-flow.</p>
+ *
+ * <h3>Happy path (6 steps)</h3>
  * <ol>
- *   <li>{@code TransferInitiatedEvent} → Fraud check</li>
- *   <li>{@code FraudCheckCompletedEvent} → FX conversion (if cross-currency)</li>
- *   <li>{@code FxConversionCompletedEvent} → Debit source account</li>
+ *   <li>{@code TransferInitiatedEvent} → Fraud check (external adapter w/
+ *       circuit breaker + retry)</li>
+ *   <li>{@code FraudCheckCompletedEvent} → FX conversion (skipped when source
+ *       and target currencies match)</li>
+ *   <li>{@code FxConversionCompletedEvent} → Debit source account
+ *       (optimistic-lock protected)</li>
  *   <li>{@code AccountDebitedEvent} → Credit target account</li>
- *   <li>{@code AccountCreditedEvent} → Record double-entry ledger</li>
- *   <li>{@code LedgerEntryRecordedEvent} → Mark transfer completed</li>
+ *   <li>{@code AccountCreditedEvent} → Record balanced double-entry
+ *       {@code LedgerEntry}</li>
+ *   <li>{@code LedgerEntryRecordedEvent} → Mark transfer COMPLETED</li>
  * </ol>
  *
- * <p>On any failure, the orchestrator triggers compensation (reversal)
- * of already-executed steps and marks the transfer as FAILED.</p>
+ * <h3>Compensation (reverse path on any failure)</h3>
+ * <p>Failures at any step emit a {@code TransferFailedEvent}; steps already
+ * applied are compensated in reverse order (credit → debit reversal) and the
+ * transfer reaches the terminal {@code FAILED} state. The ledger stays
+ * balanced because compensation creates a mirroring ledger entry rather than
+ * deleting the original — the ledger is <i>append-only</i>.</p>
  *
- * <p><b>Exactly-once semantics:</b> Each step checks the transfer's current
- * status before proceeding, making the handler idempotent.</p>
+ * <h2>Exactly-once semantics</h2>
+ * <p>This orchestrator is invoked from the Kafka consumer with at-least-once
+ * delivery. Each step:</p>
+ * <ul>
+ *   <li>Reads the current {@link Transfer} aggregate state.</li>
+ *   <li>Checks the expected predecessor status via
+ *       {@code Transfer.assertStatus} — a duplicate event for an
+ *       already-advanced transfer is a no-op.</li>
+ *   <li>Persists state change <b>and</b> the next outbox event in the same
+ *       local transaction (Transactional Outbox pattern —
+ *       {@link com.mariosmant.fintech.infrastructure.messaging.publisher.OutboxPollingPublisher}).</li>
+ * </ul>
+ * <p>This combination produces <i>effectively-once</i> end-to-end delivery
+ * without a distributed transaction.</p>
+ *
+ * <h2>Hexagonal/Ports &amp; Adapters</h2>
+ * <p>The orchestrator lives in the <i>application</i> layer. It depends only
+ * on <i>outbound ports</i> defined by the domain
+ * ({@link TransferRepository}, {@link AccountRepository},
+ * {@link LedgerRepository}, {@link OutboxRepository},
+ * {@link FraudDetectionPort}, {@link FxRatePort}) — never on Spring, JPA, or
+ * Kafka types. That keeps the saga pure enough to unit-test with in-memory
+ * fakes.</p>
+ *
+ * <h2>PCI DSS / regulatory considerations</h2>
+ * <ul>
+ *   <li><b>PCI DSS §10.2</b> — every step boundary is surrounded by structured
+ *       logs carrying userId / transferId (via MDC), so the audit trail is
+ *       continuous across asynchronous hops.</li>
+ *   <li><b>PSD2 SCA</b> — the fraud step runs before any balance mutation,
+ *       so a declined transfer never debits the customer. Compensations are
+ *       only needed for infrastructure failures (DB/Kafka), not for business
+ *       declines.</li>
+ * </ul>
  *
  * @author mariosmant
  * @since 1.0.0

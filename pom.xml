@@ -24,6 +24,34 @@
         with Kafka, double-entry ledger, multi-currency FX, and fraud detection.
     </description>
 
+    <!-- Proprietary — All Rights Reserved. See LICENSE at the repository root.
+         SPDX expresses non-OSI / proprietary licenses via the `LicenseRef-` prefix
+         (SPDX Spec §10.1). -->
+    <licenses>
+        <license>
+            <name>Proprietary — All Rights Reserved</name>
+            <url>https://github.com/mariosmant/poc-fintech/blob/main/LICENSE</url>
+            <distribution>manual</distribution>
+            <comments>SPDX-License-Identifier: LicenseRef-Proprietary</comments>
+        </license>
+    </licenses>
+
+    <organization>
+        <name>Marios Mantratzis</name>
+    </organization>
+
+    <inceptionYear>2026</inceptionYear>
+
+    <developers>
+        <developer>
+            <name>Marios Mantratzis</name>
+            <roles>
+                <role>Author</role>
+                <role>Maintainer</role>
+            </roles>
+        </developer>
+    </developers>
+
     <modules>
         <module>poc-fintech-domain</module>
         <module>poc-fintech-application</module>
@@ -40,6 +68,10 @@
         <!-- Third-party versions not managed by Spring Boot BOM -->
         <resilience4j.version>2.3.0</resilience4j.version>
         <springdoc.version>2.8.6</springdoc.version>
+        <!-- Distributed rate limiter (Bucket4j + Redis/Lettuce).
+             Bucket4j has no Spring Boot BOM entry; we pin centrally so the three
+             jdk17-* artifacts stay in lock-step. -->
+        <bucket4j.version>8.18.0</bucket4j.version>
     </properties>
 
     <dependencyManagement>
@@ -75,6 +107,23 @@
                 <groupId>org.springdoc</groupId>
                 <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
                 <version>${springdoc.version}</version>
+            </dependency>
+
+            <!-- ── Bucket4j ──────────────────────────────────────────────── -->
+            <dependency>
+                <groupId>com.bucket4j</groupId>
+                <artifactId>bucket4j_jdk17-core</artifactId>
+                <version>${bucket4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.bucket4j</groupId>
+                <artifactId>bucket4j_jdk17-redis-common</artifactId>
+                <version>${bucket4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.bucket4j</groupId>
+                <artifactId>bucket4j_jdk17-lettuce</artifactId>
+                <version>${bucket4j.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
@@ -133,5 +182,52 @@
             </plugin>
         </plugins>
     </build>
+
+    <!--
+      ============================================================================
+      Profile: pci-scan — OWASP Dependency-Check vulnerability scanning
+      ============================================================================
+      Activate with `mvn -Ppci-scan verify` to run OWASP Dependency-Check against
+      all transitive dependencies. The build FAILS if any CVE with CVSS ≥ 7.0
+      (High/Critical) is present. Lower-severity findings are reported but do
+      not break the build.
+
+      The NVD feed is cached under ~/.m2/dependency-check-data and refreshed
+      automatically; an NVD API key can be set via the env var
+      NVD_API_KEY to raise the feed rate-limit on CI runs.
+      ============================================================================
+    -->
+    <profiles>
+        <profile>
+            <id>pci-scan</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.owasp</groupId>
+                        <artifactId>dependency-check-maven</artifactId>
+                        <version>12.1.0</version>
+                        <configuration>
+                            <!-- Fail on CVSS High/Critical (PCI DSS §6.3.3). -->
+                            <failBuildOnCVSS>7.0</failBuildOnCVSS>
+                            <!-- Skip test-scope jars (not shipped with the application). -->
+                            <skipTestScope>true</skipTestScope>
+                            <!-- Aggregate all modules into a single, auditor-friendly report. -->
+                            <format>ALL</format>
+                            <outputDirectory>${project.build.directory}/dependency-check</outputDirectory>
+                            <nvdApiKeyEnvironmentVariable>NVD_API_KEY</nvdApiKeyEnvironmentVariable>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <goals>
+                                    <goal>aggregate</goal>
+                                </goals>
+                                <phase>verify</phase>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
 

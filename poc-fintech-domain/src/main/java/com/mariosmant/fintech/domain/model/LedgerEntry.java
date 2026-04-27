@@ -6,14 +6,39 @@ import java.time.Instant;
 import java.util.Objects;
 
 /**
- * Ledger Entry — represents a single line in the double-entry accounting ledger.
+ * {@code LedgerEntry} — a single row in the double-entry accounting ledger.
  *
- * <p><b>Double-entry accounting invariant:</b> Every financial transaction
- * is recorded as both a debit and a credit of equal amount. The debit side
- * is the source account; the credit side is the target account.</p>
+ * <h2>Architecture role</h2>
+ * <ul>
+ *   <li><b>Double-entry bookkeeping</b> (Luca Pacioli, 1494; still the
+ *       generally-accepted model in every regulated jurisdiction): every
+ *       economic event is recorded as a matched pair of debit and credit of
+ *       <i>equal</i> magnitude. The sum of all debits must equal the sum of
+ *       all credits across the ledger at all times — this is an auditable
+ *       invariant that the application exposes as a reconciliation query.</li>
+ *   <li><b>DDD Entity (not an Aggregate Root):</b> a ledger entry is always
+ *       created inside the {@code Transfer} saga — its lifecycle is owned by
+ *       the transfer that produced it. Once inserted it is <b>immutable</b>
+ *       (no setters, no public mutating API; the {@code ledger_entries} table
+ *       has no UPDATE/DELETE in any repository method).</li>
+ *   <li><b>Event Sourcing flavour:</b> the ledger <i>is</i> the source of
+ *       truth for account balance history; account-balance snapshots on the
+ *       {@code accounts} table are a materialised view for read performance.
+ *       Any balance can be reconstructed from {@code SUM(credits) -
+ *       SUM(debits)} over {@code ledger_entries}.</li>
+ * </ul>
  *
- * <p>This is <em>not</em> an aggregate root — it is created as part of a
- * Transfer saga step and is immutable once persisted.</p>
+ * <h2>PCI DSS / audit touchpoints</h2>
+ * <ul>
+ *   <li><b>PCI DSS §10.5.2 analogue</b> — the ledger is append-only at the
+ *       application level, and the adjacent {@code audit_log} table gains
+ *       DB-level immutability triggers (Flyway V9) so even an SQL-injection
+ *       foothold cannot alter the trail.</li>
+ *   <li><b>NIST SP 800-53 AU-10 (non-repudiation)</b> — every
+ *       {@code LedgerEntry} carries the {@link #transferId}, which links back
+ *       to the {@code initiated_by} user on {@code transfers} and thereby to
+ *       the audited JWT subject.</li>
+ * </ul>
  *
  * @author mariosmant
  * @since 1.0.0

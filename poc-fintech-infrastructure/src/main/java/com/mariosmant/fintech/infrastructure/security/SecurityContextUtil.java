@@ -2,6 +2,9 @@ package com.mariosmant.fintech.infrastructure.security;
 
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
+import org.springframework.security.oauth2.core.oidc.user.OidcUser;
+import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
@@ -21,13 +24,34 @@ public final class SecurityContextUtil {
     /**
      * Returns the authenticated user's Keycloak subject ID (UUID).
      *
-     * @return the user ID from JWT {@code sub} claim
+     * <p>Supports both auth modes:</p>
+     * <ul>
+     *   <li>Resource-Server (default) — principal is {@link JwtAuthenticationToken};
+     *       {@code sub} comes from the validated access token.</li>
+     *   <li>BFF (profile {@code bff}) — principal is {@link OAuth2AuthenticationToken}
+     *       wrapping an {@link OidcUser}; {@code sub} comes from the ID-token claims.</li>
+     * </ul>
+     *
+     * @return the user ID from the OIDC {@code sub} claim
      * @throws IllegalStateException if no authenticated user in context
      */
     public static String getAuthenticatedUserId() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth instanceof JwtAuthenticationToken jwtAuth) {
             return jwtAuth.getToken().getSubject();
+        }
+        if (auth instanceof OAuth2AuthenticationToken oauth2Auth) {
+            OAuth2User principal = oauth2Auth.getPrincipal();
+            if (principal instanceof OidcUser oidc && oidc.getSubject() != null) {
+                return oidc.getSubject();
+            }
+            Object sub = principal != null ? principal.getAttributes().get("sub") : null;
+            if (sub != null) {
+                return sub.toString();
+            }
+            // Last-resort fallback so the controller can still serve the
+            // authenticated user even if the IdP omitted the sub claim.
+            return oauth2Auth.getName();
         }
         throw new IllegalStateException("No authenticated user in security context");
     }
@@ -43,6 +67,16 @@ public final class SecurityContextUtil {
             Jwt jwt = jwtAuth.getToken();
             String username = jwt.getClaimAsString("preferred_username");
             return username != null ? username : "unknown";
+        }
+        if (auth instanceof OAuth2AuthenticationToken oauth2Auth) {
+            OAuth2User principal = oauth2Auth.getPrincipal();
+            if (principal != null) {
+                Object username = principal.getAttributes().get("preferred_username");
+                if (username != null) {
+                    return username.toString();
+                }
+            }
+            return oauth2Auth.getName() != null ? oauth2Auth.getName() : "unknown";
         }
         return "unknown";
     }

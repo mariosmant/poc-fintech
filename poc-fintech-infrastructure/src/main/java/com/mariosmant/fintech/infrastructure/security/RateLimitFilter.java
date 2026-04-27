@@ -1,107 +1,139 @@
 package com.mariosmant.fintech.infrastructure.security;
 
+import com.mariosmant.fintech.infrastructure.security.ratelimit.BucketPolicyResolver;
+import com.mariosmant.fintech.infrastructure.security.ratelimit.RateLimitPolicy;
+import com.mariosmant.fintech.infrastructure.security.ratelimit.RateLimiter;
+import com.mariosmant.fintech.infrastructure.security.tenant.TenantResolver;
+import com.mariosmant.fintech.infrastructure.web.exception.ProblemDetails;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ProblemDetail;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
-import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Per-user rate limiting filter to protect against abuse and DoS.
- * Uses a simple sliding window counter per user (from JWT subject).
+ * Per-principal rate-limiting filter.
  *
- * <p>Returns 429 Too Many Requests with Retry-After header when limit exceeded.</p>
+ * <h2>Architecture</h2>
+ * <p>The filter depends only on the {@link RateLimiter} <b>port</b> and the
+ * {@link BucketPolicyResolver} <b>port</b>; concrete adapters
+ * ({@code CaffeineRateLimiter}, {@code Bucket4jRedisRateLimiter},
+ * {@code CircuitBreakingRateLimiter}, {@code PathPatternBucketPolicyResolver})
+ * are wired in {@code RateLimitConfig}. An ArchUnit fitness function in
+ * {@code HexagonalArchitectureTest} forbids this class from depending on
+ * Bucket4j, Lettuce, or Caffeine packages so the boundary cannot silently
+ * regress.</p>
  *
- * <p>Production note: In a distributed environment, replace with Redis-based
- * rate limiting (e.g., Bucket4j + Redis) for consistent limiting across instances.</p>
+ * <h2>Standards mapping</h2>
+ * <ul>
+ *   <li>RFC 6585 §4 — HTTP 429 Too Many Requests.</li>
+ *   <li>RFC 7807 — Problem Details for HTTP APIs.</li>
+ *   <li>{@code draft-ietf-httpapi-ratelimit-headers} — RateLimit-* fields.</li>
+ *   <li>OWASP API Security Top 10 — API4:2023 Unrestricted Resource Consumption.</li>
+ *   <li>NIST SP 800-53 SC-5 — Denial-of-Service Protection.</li>
+ *   <li>OWASP ASVS V11.1 — Business-logic security (rate / volume).</li>
+ * </ul>
  *
  * @author mariosmant
  * @since 1.0.0
  */
-@Component
 public class RateLimitFilter extends OncePerRequestFilter {
 
     private static final Logger log = LoggerFactory.getLogger(RateLimitFilter.class);
 
-    private final Map<String, WindowCounter> counters = new ConcurrentHashMap<>();
+    private final RateLimiter limiter;
+    private final BucketPolicyResolver policyResolver;
+    private final TenantResolver tenantResolver;
+    private final ObjectMapper objectMapper;
 
-    @Value("${app.rate-limit.requests-per-minute:100}")
-    private int requestsPerMinute;
+    public RateLimitFilter(RateLimiter limiter,
+                           BucketPolicyResolver policyResolver,
+                           TenantResolver tenantResolver,
+                           ObjectMapper objectMapper) {
+        this.limiter = limiter;
+        this.policyResolver = policyResolver;
+        this.tenantResolver = tenantResolver;
+        this.objectMapper = objectMapper;
+        log.info("RateLimitFilter — wired with limiter={} resolver={} tenantResolver={}",
+                limiter.getClass().getSimpleName(),
+                policyResolver.getClass().getSimpleName(),
+                tenantResolver.getClass().getSimpleName());
+    }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
-        // Only rate-limit API endpoints
+        // Only rate-limit API endpoints — actuator, BFF metadata, OAuth2
+        // redirects must remain reachable even under aggressive limits so
+        // health probes and login flows aren't starved.
         if (!request.getRequestURI().startsWith("/api/")) {
             filterChain.doFilter(request, response);
             return;
         }
 
+        RateLimitPolicy policy = policyResolver.resolve(request);
         String key = resolveRateLimitKey(request);
-        WindowCounter counter = counters.computeIfAbsent(key, k -> new WindowCounter());
+        RateLimiter.Decision decision = limiter.tryConsume(key, policy);
 
-        if (!counter.tryAcquire(requestsPerMinute)) {
-            log.warn("Rate limit exceeded for key={}", key);
-            response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
-            response.setHeader("Retry-After", "60");
-            response.setHeader("X-RateLimit-Remaining", "0");
-            response.setContentType("application/json");
-            response.getWriter().write("""
-                    {"type":"urn:fintech:error:rate-limit","title":"Too Many Requests","status":429,"detail":"Rate limit exceeded. Try again later."}""");
+        // IETF draft-ietf-httpapi-ratelimit-headers — emit on every response,
+        // success or 429, so SDKs can implement client-side back-off.
+        response.setHeader("RateLimit-Limit", String.valueOf(decision.limit()));
+        response.setHeader("RateLimit-Remaining", String.valueOf(decision.remaining()));
+        response.setHeader("RateLimit-Reset", String.valueOf(decision.retryAfterSeconds()));
+
+        if (!decision.allowed()) {
+            log.warn("Rate limit exceeded policy={} key={} retryAfter={}s",
+                    policy.id(), key, decision.retryAfterSeconds());
+            writeRateLimitedResponse(response, decision.retryAfterSeconds());
             return;
         }
 
-        response.setHeader("X-RateLimit-Remaining",
-                String.valueOf(Math.max(0, requestsPerMinute - counter.getCount())));
         filterChain.doFilter(request, response);
     }
 
-    private String resolveRateLimitKey(HttpServletRequest request) {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth instanceof JwtAuthenticationToken jwtAuth) {
-            return "user:" + jwtAuth.getToken().getSubject();
-        }
-        // Fall back to IP for unauthenticated requests
-        return "ip:" + request.getRemoteAddr();
+    /**
+     * Build the 429 body via {@link ProblemDetails} so the shape matches every
+     * other error in the application — opaque {@code detail}, canonical
+     * {@code type} URI {@code urn:fintech:error:rate-limit}, MDC-driven
+     * {@code requestId}/{@code traceId}, ISO-8601 {@code timestamp}.
+     */
+    private void writeRateLimitedResponse(HttpServletResponse response, long retryAfterSeconds)
+            throws IOException {
+        response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
+        response.setHeader("Retry-After", String.valueOf(retryAfterSeconds));
+        response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+
+        ProblemDetail body = ProblemDetails.of(
+                HttpStatus.TOO_MANY_REQUESTS,
+                ProblemDetails.ErrorType.RATE_LIMITED,
+                "Rate limit exceeded. Try again in " + retryAfterSeconds + " seconds.");
+        objectMapper.writeValue(response.getOutputStream(), body);
     }
 
-    /**
-     * Simple sliding-window counter with 1-minute resolution.
-     */
-    private static class WindowCounter {
-        private volatile long windowStart = System.currentTimeMillis();
-        private final AtomicInteger count = new AtomicInteger(0);
-
-        boolean tryAcquire(int limit) {
-            long now = System.currentTimeMillis();
-            if (now - windowStart > 60_000) {
-                synchronized (this) {
-                    if (now - windowStart > 60_000) {
-                        windowStart = now;
-                        count.set(0);
-                    }
-                }
-            }
-            return count.incrementAndGet() <= limit;
+    private String resolveRateLimitKey(HttpServletRequest request) {
+        // every key is namespaced by tenant. Single-
+        // tenant deployments transparently get the "shared" prefix; multi-
+        // tenant deployments can isolate buckets per tenant without a code
+        // change to the limiter or its adapters.
+        String tenant = tenantResolver.resolveTenant(request);
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth instanceof JwtAuthenticationToken jwtAuth) {
+            return "tenant:" + tenant + ":user:" + jwtAuth.getToken().getSubject();
         }
-
-        int getCount() {
-            return count.get();
-        }
+        // Fall back to IP for unauthenticated requests.
+        return "tenant:" + tenant + ":ip:" + request.getRemoteAddr();
     }
 }
 

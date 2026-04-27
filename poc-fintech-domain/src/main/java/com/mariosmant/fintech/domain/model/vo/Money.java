@@ -5,14 +5,50 @@ import java.math.RoundingMode;
 import java.util.Objects;
 
 /**
- * Value Object representing a monetary amount in a specific currency.
+ * {@code Money} — <b>Value Object</b> (DDD) representing a monetary amount
+ * in a specific ISO 4217 currency.
  *
- * <p>Immutable. All arithmetic returns new instances. Uses
- * {@link RoundingMode#HALF_EVEN} (banker's rounding) per financial standards.
- * Scale is determined by the currency's ISO 4217 decimal places.</p>
+ * <h2>Architecture role</h2>
+ * <ul>
+ *   <li><b>DDD Value Object (Evans, ch. 5):</b> identity-less, immutable,
+ *       structurally compared. Implemented as a Java {@code record} so
+ *       equality, hashing, and debug-string are contract-derived from its
+ *       two components ({@code amount}, {@code currency}).</li>
+ *   <li><b>Ubiquitous language:</b> every monetary quantity in the domain
+ *       — account balance, transfer amount, ledger debit/credit — is a
+ *       {@code Money}. {@code BigDecimal} never appears raw in a domain
+ *       signature; you cannot accidentally pass an EUR amount to a USD
+ *       slot because the types differ.</li>
+ * </ul>
  *
- * <p><b>Design decision:</b> {@code BigDecimal} over {@code double} to avoid
- * floating-point precision errors — critical in fintech applications.</p>
+ * <h2>Why {@link BigDecimal}, why banker's rounding</h2>
+ * <ul>
+ *   <li><b>No IEEE-754 / double:</b> floating-point binary cannot represent
+ *       {@code 0.1} exactly, so {@code 0.1 + 0.2 != 0.3}. A single
+ *       accumulated rounding error on a reconciliation run can fail external
+ *       audits (ISO 4217 + IFRS require exact decimal arithmetic — FR 2017-02,
+ *       EU MiFID II RTS 22). {@code BigDecimal} guarantees bit-exact decimals.</li>
+ *   <li><b>Scale follows the currency:</b> {@code JPY}/{@code KRW} use scale 0
+ *       (no minor units), most currencies use scale 2, a handful use scale 3
+ *       (BHD, KWD, OMR). The compact constructor enforces that on every
+ *       instantiation so {@code Money(10.5, JPY)} becomes {@code 11 JPY},
+ *       never {@code 10.50 JPY}.</li>
+ *   <li><b>{@link RoundingMode#HALF_EVEN} (banker's rounding)</b> is the
+ *       financial-industry default — unlike {@code HALF_UP} it is statistically
+ *       unbiased over large populations of transactions, which matters for
+ *       fee accruals and FX spreads (IEEE 754 §4.3.3 calls the same rule
+ *       "roundTiesToEven"; it's also the default in Excel/SAP/Oracle FS).</li>
+ * </ul>
+ *
+ * <h2>Invariants</h2>
+ * <ul>
+ *   <li>Amount and currency are both non-null.</li>
+ *   <li>Arithmetic ({@link #add} / {@link #subtract}) requires operands of
+ *       the <i>same</i> currency — mismatches throw at runtime rather than
+ *       silently producing a meaningless sum.</li>
+ *   <li>Immutable — every operation returns a new instance; thread-safe by
+ *       construction.</li>
+ * </ul>
  *
  * @param amount   the monetary amount (scaled to the currency's decimals)
  * @param currency the ISO 4217 currency

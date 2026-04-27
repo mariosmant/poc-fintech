@@ -1,5 +1,7 @@
 package com.mariosmant.fintech.infrastructure.security;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -10,6 +12,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -33,6 +36,8 @@ import java.util.stream.Stream;
  * @since 1.0.0
  */
 public final class KeycloakJwtAuthoritiesConverter {
+
+    private static final Logger log = LoggerFactory.getLogger(KeycloakJwtAuthoritiesConverter.class);
 
     /**
      * Keycloak client id whose {@code resource_access.<client>.roles} should be mapped.
@@ -73,9 +78,37 @@ public final class KeycloakJwtAuthoritiesConverter {
                             .map(String.class::cast))
                     .orElse(Stream.empty());
 
-            return Stream.concat(realmRoles, clientRoles)
+            // Defensive: some Keycloak deployments flatten roles via a custom mapper to a
+            // top-level "roles" claim, or surface them as Keycloak groups (leading-slash stripped).
+            // Including these makes the converter resilient to common realm-export drift.
+            Stream<String> flatRoles = Optional.ofNullable(jwt.getClaim("roles"))
+                    .filter(List.class::isInstance)
+                    .map(roles -> ((List<?>) roles).stream()
+                            .filter(String.class::isInstance)
+                            .map(String.class::cast))
+                    .orElse(Stream.empty());
+
+            Stream<String> groupRoles = Optional.ofNullable(jwt.getClaim("groups"))
+                    .filter(List.class::isInstance)
+                    .map(groups -> ((List<?>) groups).stream()
+                            .filter(String.class::isInstance)
+                            .map(String.class::cast)
+                            .map(g -> g.startsWith("/") ? g.substring(1) : g))
+                    .orElse(Stream.empty());
+
+            Set<GrantedAuthority> authorities = Stream.of(realmRoles, clientRoles, flatRoles, groupRoles)
+                    .flatMap(s -> s)
+                    .filter(r -> r != null && !r.isBlank())
                     .map(role -> new SimpleGrantedAuthority("ROLE_" + role.toUpperCase()))
                     .collect(Collectors.toSet());
+
+            if (authorities.isEmpty() && log.isDebugEnabled()) {
+                // No PII: only claim names + subject. Helps diagnose realm/scope misconfiguration
+                // when an otherwise-valid JWT yields a 403 from method security.
+                log.debug("JWT for sub={} produced no role authorities; available claims: {}",
+                        jwt.getSubject(), jwt.getClaims().keySet());
+            }
+            return authorities;
         };
     }
 }

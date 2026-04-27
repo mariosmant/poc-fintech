@@ -14,11 +14,6 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
-import org.springframework.security.web.header.writers.CrossOriginEmbedderPolicyHeaderWriter;
-import org.springframework.security.web.header.writers.CrossOriginOpenerPolicyHeaderWriter;
-import org.springframework.security.web.header.writers.CrossOriginResourcePolicyHeaderWriter;
-import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
-import org.springframework.security.web.header.writers.XXssProtectionHeaderWriter;
 import org.springframework.web.cors.CorsConfigurationSource;
 
 
@@ -79,7 +74,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
-@Profile("!test")
+@Profile({"!test & !bff"})
 public class SecurityConfig {
 
     /**
@@ -129,55 +124,12 @@ public class SecurityConfig {
         http
                 // ── OAuth2 Resource Server (JWT from Keycloak) ───────────
                 .oauth2ResourceServer(oauth2 -> oauth2
-                        .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())))
+                        .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
 
-                // ── Security headers ─────────────────────────────────────
-                .headers(headers -> headers
-                        .httpStrictTransportSecurity(hsts -> hsts
-                                .includeSubDomains(true)
-                                .preload(true)
-                                .maxAgeInSeconds(31_536_000))
-                        .contentTypeOptions(contentType -> {
-                        })
-                        .frameOptions(frame -> frame.deny())
-                        .xssProtection(xss ->
-                                xss.headerValue(XXssProtectionHeaderWriter.HeaderValue.DISABLED))
-                        .referrerPolicy(referrer ->
-                                referrer.policy(ReferrerPolicyHeaderWriter
-                                        .ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
-                        // Cross-Origin isolation (Spectre / side-channel mitigation)
-                        .crossOriginOpenerPolicy(coop -> coop.policy(
-                                CrossOriginOpenerPolicyHeaderWriter.CrossOriginOpenerPolicy.SAME_ORIGIN))
-                        .crossOriginEmbedderPolicy(coep -> coep.policy(
-                                CrossOriginEmbedderPolicyHeaderWriter.CrossOriginEmbedderPolicy.REQUIRE_CORP))
-                        .crossOriginResourcePolicy(corp -> corp.policy(
-                                CrossOriginResourcePolicyHeaderWriter.CrossOriginResourcePolicy.SAME_ORIGIN))
-                        .contentSecurityPolicy(csp -> csp
-                                .policyDirectives(
-                                        "default-src 'self'; " +
-                                        "script-src 'self'; " +
-                                        "script-src-attr 'none'; " +
-                                        "style-src 'self' 'unsafe-inline'; " +
-                                        "img-src 'self' data:; " +
-                                        "font-src 'self'; " +
-                                        "connect-src 'self'; " +
-                                        "frame-ancestors 'none'; " +
-                                        "form-action 'self'; " +
-                                        "base-uri 'self'; " +
-                                        "object-src 'none'; " +
-                                        "upgrade-insecure-requests"))
-                        .permissionsPolicy(permissions -> permissions
-                                .policy("accelerometer=(), autoplay=(), browsing-topics=(), " +
-                                        "camera=(), cross-origin-isolated=(), display-capture=(), " +
-                                        "encrypted-media=(), fullscreen=(), geolocation=(), " +
-                                        "gyroscope=(), hid=(), identity-credentials-get=(), " +
-                                        "idle-detection=(), magnetometer=(), microphone=(), " +
-                                        "midi=(), payment=(), picture-in-picture=(), " +
-                                        "publickey-credentials-create=(), publickey-credentials-get=(), " +
-                                        "screen-wake-lock=(), serial=(), storage-access=(), " +
-                                        "usb=(), web-share=(), xr-spatial-tracking=()"))
-                )
+        // ── Security headers (NIST SC-8/SC-18, SOG-IS, SOC 2 CC6.6) ─────
+        SecurityHeaders.apply(http);
 
+        http
                 // ── Authorization rules ──────────────────────────────────
                 .authorizeHttpRequests(auth -> auth
                         // Actuator health/info — always accessible for load balancers
@@ -188,6 +140,9 @@ public class SecurityConfig {
                         ).permitAll()
                         // Prometheus metrics — permit for scraping (restrict via network in prod)
                         .requestMatchers("/actuator/prometheus").permitAll()
+                        // Audit-chain verifier — admin only (PCI DSS §10.5, NIST AU-9(3))
+                        .requestMatchers("/actuator/auditchain", "/actuator/auditchain/**")
+                        .hasRole("ADMIN")
                         // OpenAPI / Swagger UI — permit for POC
                         .requestMatchers(
                                 "/swagger-ui/**",

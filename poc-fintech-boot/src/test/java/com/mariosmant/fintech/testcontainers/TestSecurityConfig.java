@@ -60,13 +60,12 @@ public class TestSecurityConfig {
                         .referrerPolicy(ref -> ref.policy(
                                 org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter
                                         .ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
+                        // TODO Deprecated.
                         .permissionsPolicy(pp -> pp.policy(
                                 "camera=(), microphone=(), geolocation=(), payment=(self)")))
                 .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
         return http.build();
     }
-
-    // ...existing code...
 
     /**
      * Mock JwtDecoder that accepts any token and returns a stable test user identity.

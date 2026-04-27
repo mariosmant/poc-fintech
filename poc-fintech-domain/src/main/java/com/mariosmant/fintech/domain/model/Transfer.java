@@ -20,17 +20,54 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * Transfer Aggregate Root — represents a money movement between two accounts.
+ * {@code Transfer} — <b>Aggregate Root</b> modelling a money movement between
+ * two accounts as a finite state machine driven by the {@code TransferSagaOrchestrator}.
  *
- * <p>Follows a strict state-machine enforced by the Saga Orchestrator.
- * Each state transition validates the legal predecessor state and registers
- * the corresponding domain event.</p>
- *
- * <p><b>Invariants:</b></p>
+ * <h2>Architecture role</h2>
  * <ul>
- *   <li>State transitions must follow the defined Saga step order.</li>
- *   <li>Idempotency key is unique across the system.</li>
- *   <li>Optimistic locking via {@code version}.</li>
+ *   <li><b>Saga pattern (orchestrated):</b> each state transition corresponds
+ *       to one step of the transfer saga — {@code INITIATED → FRAUD_CHECKING →
+ *       FX_CONVERTING → DEBITING → CREDITING → RECORDING_LEDGER → COMPLETED},
+ *       with {@code COMPENSATING}/{@code FAILED} as the reverse path. The
+ *       orchestrator picks the next step purely from the current status,
+ *       which keeps the saga stateless on the application side and the state
+ *       machine testable in isolation. (Ref: Richardson — Microservices Patterns
+ *       ch. 4, Sagas — Orchestration variant.)</li>
+ *   <li><b>Idempotency:</b> {@link #assertStatus} ensures that replaying a
+ *       Kafka event after a crash (at-least-once delivery) is a no-op if the
+ *       transfer has already advanced past the corresponding step. Combined
+ *       with the producer-side Transactional Outbox this yields <i>effectively
+ *       once</i> processing.</li>
+ *   <li><b>Business idempotency key:</b> {@link #idempotencyKey} is
+ *       client-supplied and enforced as a unique constraint at the persistence
+ *       layer — a retried {@code POST /api/v1/transfers} never creates a
+ *       duplicate transfer even if the client times out.</li>
+ *   <li><b>Optimistic locking:</b> {@link #version} maps to JPA
+ *       {@code @Version}; contending updates during compensation scenarios
+ *       fail-fast rather than blocking.</li>
+ * </ul>
+ *
+ * <h2>Invariants</h2>
+ * <ul>
+ *   <li>State transitions must follow the saga step order (guarded by
+ *       {@link #assertStatus}).</li>
+ *   <li>{@link #targetAmount} / {@link #exchangeRate} are populated only
+ *       once FX conversion has completed, and never mutated afterwards.</li>
+ *   <li>{@link #markFailed} is terminal and sets {@link #failureReason} so
+ *       compensation handlers have the full context for audit logging.</li>
+ * </ul>
+ *
+ * <h2>Fintech concepts realised here</h2>
+ * <ul>
+ *   <li><b>Multi-currency</b> via {@link #requiresFxConversion} — same-currency
+ *       transfers skip the FX step entirely, avoiding unnecessary 1.0-rate
+ *       multiplication.</li>
+ *   <li><b>Fraud detection</b> runs <i>before</i> any balance mutation — the
+ *       debit never happens when fraud is detected (safer than post-hoc
+ *       compensation and aligned with PSD2 SCA risk-based authentication).</li>
+ *   <li><b>Ledger posting</b> is the last step before {@code COMPLETED}, which
+ *       guarantees that a transfer visible as "COMPLETED" always has a
+ *       corresponding balanced debit/credit pair in {@code ledger_entries}.</li>
  * </ul>
  *
  * @author mariosmant

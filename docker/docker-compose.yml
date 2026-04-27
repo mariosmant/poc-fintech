@@ -143,6 +143,29 @@ services:
     ports:
       - "3000:3000"
 
+  # ── OpenTelemetry Collector ────────────────────────────────────────────
+  # Receives OTLP traces + metrics from the Spring Boot app, applies tail-
+  # based sampling (errors, slow spans, 429/403 always; 10 % baseline),
+  # exposes Prometheus on :8889. See `otel-collector/otel-collector-config.yml`.
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.111.0
+    container_name: fintech-otel-collector
+    command: [ "--config=/etc/otelcol/config.yml" ]
+    volumes:
+      - ./otel-collector/otel-collector-config.yml:/etc/otelcol/config.yml:ro
+    environment:
+      OTEL_DEPLOYMENT_ENVIRONMENT: dev
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP — matches application.yml exporter target
+      - "8888:8888"   # Collector self-metrics
+      - "8889:8889"   # Prometheus metrics exposition
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:8888/metrics > /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   postgres_data:
   keycloak_postgres_data:

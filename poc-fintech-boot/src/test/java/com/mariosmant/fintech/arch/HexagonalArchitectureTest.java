@@ -21,7 +21,7 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
 /**
- * Architectural fitness functions — see ADR-0009.
+ * Architectural fitness functions.
  *
  * <p>Written as plain JUnit 5 tests (not ArchUnit's own JUnit engine) so the
  * suite stays decoupled from the ArchUnit platform-engine version and we can
@@ -57,7 +57,7 @@ class HexagonalArchitectureTest {
                         "com.mariosmant.fintech.application..",
                         "com.mariosmant.fintech.infrastructure..",
                         "com.mariosmant.fintech.config..")
-                .because("Domain must be pure Java (ADR-0001).");
+                .because("Domain must be pure Java.");
         rule.check(importedClasses);
     }
 
@@ -76,7 +76,7 @@ class HexagonalArchitectureTest {
                         "org.hibernate..",
                         "com.mariosmant.fintech.infrastructure..",
                         "com.mariosmant.fintech.config..")
-                .because("Application layer must be framework-free (ADR-0001).");
+                .because("Application layer must be framework-free.");
         rule.check(importedClasses);
     }
 
@@ -171,7 +171,95 @@ class HexagonalArchitectureTest {
     @DisplayName("no Jackson polymorphic default typing is activated anywhere")
     void noPolymorphicDefaultTyping() {
         noClasses().should().callMethodWhere(targetMethodNamed("activateDefaultTyping"))
-                .because("Polymorphic default typing is the root cause of the Jackson 2.x RCE CVE class (ADR-0007).")
+                .because("Polymorphic default typing is the root cause of the Jackson 2.x RCE CVE class.")
+                .check(importedClasses);
+    }
+
+    // ── 6. RateLimitFilter must depend only on the port ──
+
+    @Test
+    @DisplayName("RateLimitFilter does not import Bucket4j or Caffeine directly")
+    void rateLimitFilterUsesPortOnly() {
+        noClasses().that().haveSimpleName("RateLimitFilter")
+                .should().dependOnClassesThat().resideInAnyPackage(
+                        "io.github.bucket4j..",
+                        "io.lettuce..",
+                        "com.github.benmanes.caffeine..")
+                .because("Filter must depend on the RateLimiter port only; "
+                        + "concrete adapters live behind it.")
+                .check(importedClasses);
+    }
+
+    // ── 7. Resilience4j must stay behind the port ───
+
+    @Test
+    @DisplayName("RateLimitFilter does not import Resilience4j (circuit-breaker stays in adapters)")
+    void rateLimitFilterDoesNotImportResilience4j() {
+        noClasses().that().haveSimpleName("RateLimitFilter")
+                .should().dependOnClassesThat().resideInAnyPackage(
+                        "io.github.resilience4j..")
+                .because("Circuit-breaker concerns belong in CircuitBreakingRateLimiter "
+                        + "(an adapter behind the RateLimiter port), not in the filter.")
+                .check(importedClasses);
+    }
+
+    @Test
+    @DisplayName("Programmatic Resilience4j CircuitBreaker API used only by rate-limit adapters")
+    void onlyRateLimitAdaptersUseProgrammaticCircuitBreaker() {
+        // The annotation-driven API (io.github.resilience4j.circuitbreaker.annotation.*)
+        // is intentionally allowed everywhere — it is the documented mechanism for
+        // FxRateAdapter / FraudDetectionAdapter (declarative). The programmatic types
+        // (CircuitBreaker, CircuitBreakerConfig, CallNotPermittedException) are only
+        // legitimate inside the rate-limit adapter package, where circuit
+        // breaker lives behind the RateLimiter port.
+        noClasses().that().resideInAPackage("com.mariosmant.fintech..")
+                .and().resideOutsideOfPackage("..infrastructure.security.ratelimit..")
+                .should().dependOnClassesThat().haveFullyQualifiedName(
+                        "io.github.resilience4j.circuitbreaker.CircuitBreaker")
+                .orShould().dependOnClassesThat().haveFullyQualifiedName(
+                        "io.github.resilience4j.circuitbreaker.CircuitBreakerConfig")
+                .orShould().dependOnClassesThat().haveFullyQualifiedName(
+                        "io.github.resilience4j.circuitbreaker.CallNotPermittedException")
+                .because("The programmatic CircuitBreaker API is an adapter-level concern"
+                        + "; only CircuitBreakingRateLimiter may import it. "
+                        + "The annotation-driven API stays freely usable elsewhere.")
+                .check(importedClasses);
+    }
+
+    // ── 8. Tenant + IP-reputation hexagonal seams ──
+
+    @Test
+    @DisplayName("TenantResolver implementations live only in security.tenant.*")
+    void tenantResolverImplementationsLiveInOnePackage() {
+        classes().that().implement(
+                        "com.mariosmant.fintech.infrastructure.security.tenant.TenantResolver")
+                .should().resideInAPackage("com.mariosmant.fintech.infrastructure.security.tenant..")
+                .because("Tenant adapters must live in the dedicated tenant package — domain "
+                        + "and application layers must not see them.")
+                .check(importedClasses);
+    }
+
+    @Test
+    @DisplayName("BlockedIpFilter does not couple to Resilience4j or Bucket4j")
+    void blockedIpFilterIsSelfContained() {
+        noClasses().that().haveSimpleName("BlockedIpFilter")
+                .should().dependOnClassesThat().resideInAnyPackage(
+                        "io.github.bucket4j..",
+                        "io.lettuce..",
+                        "io.github.resilience4j..")
+                .because("The IP-reputation pre-filter is intentionally separate from the rate "
+                        + "limiter — it must not silently couple to limiter internals.")
+                .check(importedClasses);
+    }
+
+    @Test
+    @DisplayName("IpReputationService implementations live only in security.reputation.*")
+    void ipReputationImplementationsLiveInOnePackage() {
+        classes().that().implement(
+                        "com.mariosmant.fintech.infrastructure.security.reputation.IpReputationService")
+                .should().resideInAPackage("com.mariosmant.fintech.infrastructure.security.reputation..")
+                .because("IP-reputation adapters are a hexagonal seam; concrete "
+                        + "implementations belong in the dedicated reputation package.")
                 .check(importedClasses);
     }
 

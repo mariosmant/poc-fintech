@@ -9,6 +9,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.core.oidc.user.OidcUser;
+import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.web.csrf.CsrfToken;
@@ -40,7 +42,7 @@ import java.util.Optional;
  * <p><b>Why a BFF layer even in JWT-Bearer mode?</b> The {@code /bff/user} endpoint
  * decouples the SPA from Keycloak-specific claim shapes (realm_access / resource_access)
  * and removes the need for the SPA to decode the JWT itself — a prerequisite for the
- * upcoming migration to server-held tokens (ADR-0010, Phase 2) where the token never
+ * upcoming migration to server-held tokens where the token never
  * leaves the backend.</p>
  *
  * <p>Authorization: both {@code /bff/user} and {@code /bff/logout} require authentication
@@ -88,6 +90,17 @@ public class BffController {
                     .ifPresent(v -> body.put("name", v));
             Optional.ofNullable(jwt.getClaimAsString("email"))
                     .ifPresent(v -> body.put("email", v));
+        } else if (auth.getPrincipal() instanceof OidcUser oidc) {
+            // BFF: session-backed OAuth2 Login (tokens held server-side).
+            body.put("subject", Objects.toString(oidc.getSubject(), ""));
+            body.put("username", Objects.toString(oidc.getPreferredUsername(), oidc.getName()));
+            Optional.ofNullable(oidc.getFullName()).ifPresent(v -> body.put("name", v));
+            Optional.ofNullable(oidc.getEmail()).ifPresent(v -> body.put("email", v));
+        } else if (auth.getPrincipal() instanceof OAuth2User o2) {
+            body.put("subject", Objects.toString(o2.getAttribute("sub"), auth.getName()));
+            body.put("username", Objects.toString(o2.getAttribute("preferred_username"), auth.getName()));
+            Optional.ofNullable((String) o2.getAttribute("name")).ifPresent(v -> body.put("name", v));
+            Optional.ofNullable((String) o2.getAttribute("email")).ifPresent(v -> body.put("email", v));
         } else {
             body.put("subject", auth.getName());
             body.put("username", auth.getName());

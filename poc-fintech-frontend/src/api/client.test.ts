@@ -19,7 +19,6 @@ describe('accountsApi', () => {
     });
 
     const result = await accountsApi.create({
-      ownerName: 'Alice',
       currency: 'USD',
       initialBalance: 1000,
     });

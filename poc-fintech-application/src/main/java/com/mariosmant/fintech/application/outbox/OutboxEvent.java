@@ -26,6 +26,7 @@ public class OutboxEvent {
 
     /** Default constructor for JPA / framework use. */
     public OutboxEvent() {
+        // Empty constructor.
     }
 
     /**
@@ -50,14 +51,6 @@ public class OutboxEvent {
                                      String eventType, String payload) {
         return new OutboxEvent(UUID.randomUUID(), aggregateType, aggregateId,
                 eventType, payload, false, Instant.now());
-    }
-
-    /**
-     * Marks this outbox event as published so the poller skips it on subsequent polls.
-     * Called by the {@code OutboxPollingPublisher} after successful Kafka delivery.
-     */
-    public void markPublished() {
-        this.published = true;
     }
 
     // ── Getters & Setters ────────────────────────────────────────────────

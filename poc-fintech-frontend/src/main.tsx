@@ -3,9 +3,20 @@ import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
 import { AuthProvider } from './auth/AuthProvider';
+import { BffAuthProvider } from './auth/BffAuthProvider';
 import { App } from './App';
 import { ApiError } from './api/client';
 import './index.css';
+
+/**
+ * Auth-mode switch
+ *
+ * - <code>VITE_AUTH_MODE=bff</code> → session-cookie BFF flow.
+ *   Tokens stay server-side; SPA calls /bff/user to bootstrap identity.
+ * - anything else → legacy keycloak-js Bearer flow (default).
+ */
+const AUTH_MODE = (import.meta.env.VITE_AUTH_MODE ?? 'jwt').toLowerCase();
+const ActiveAuthProvider = AUTH_MODE === 'bff' ? BffAuthProvider : AuthProvider;
 
 /**
  * React Query client with production-oriented defaults.
@@ -40,12 +51,12 @@ if (!root) throw new Error('Root element not found');
 
 createRoot(root).render(
   <StrictMode>
-    <AuthProvider>
+    <ActiveAuthProvider>
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
           <App />
         </BrowserRouter>
       </QueryClientProvider>
-    </AuthProvider>
+    </ActiveAuthProvider>
   </StrictMode>,
 );

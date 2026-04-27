@@ -33,6 +33,7 @@ public class TestcontainersConfig {
                 .withPassword("test");
     }
 
+    // TODO Revise.
     @Bean
     @ServiceConnection
     public ConfluentKafkaContainer kafkaContainer() {

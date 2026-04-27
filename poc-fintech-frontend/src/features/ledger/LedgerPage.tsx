@@ -6,7 +6,6 @@ import {
   useLedgerRecent,
   useTransfersLookup,
 } from '../../hooks/useApi';
-import { useAuth } from '../../auth/AuthProvider';
 import { ErrorMessage, Spinner } from '../../components/ui/Feedback';
 import { IbanDisplay } from '../../components/ui/IbanDisplay';
 import { formatCurrency, formatDate } from '../../utils/format';
@@ -57,7 +56,6 @@ export function LedgerPage() {
   const [searchId, setSearchId] = useState('');
   const [activeId, setActiveId] = useState('');
   const [activeType, setActiveType] = useState<'account' | 'transfer'>('account');
-  const { isAdmin } = useAuth();
 
   const recentQuery = useLedgerRecent(100);
   const accountQuery = useLedgerByAccount(activeType === 'account' ? activeId : '');
@@ -97,14 +95,7 @@ export function LedgerPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold text-gray-900">Double-Entry Ledger</h2>
-        {isAdmin && (
-          <span className="px-2.5 py-1 text-xs font-medium bg-amber-100 text-amber-800 rounded-full">
-            Admin mode — viewing all ledger entries across all users
-          </span>
-        )}
-      </div>
+      <h2 className="text-2xl font-bold text-gray-900 mb-6">Double-Entry Ledger</h2>
 
       {/* Search */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">

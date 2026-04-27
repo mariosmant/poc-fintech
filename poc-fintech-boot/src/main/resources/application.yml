@@ -12,7 +12,13 @@ server:
     include-stacktrace: never         # Never expose stack traces
     include-binding-errors: never     # Never expose validation internals
   servlet:
+    # ── Session timeout — PCI DSS v4.0.1 §8.2.8 ─────────────────────
+    # "Re-authenticate users after 15 minutes of inactivity."
+    # Container-enforced idle timeout; in the `bff` profile (OAuth2 Login)
+    # the session carries the server-held access/refresh token, so expiry
+    # of this session forces a full OIDC re-auth round-trip with Keycloak.
     session:
+      timeout: 15m
       cookie:
         # __Host- prefix binds the cookie to the exact origin (RFC 6265bis §4.1.3.2):
         # requires Secure, Path=/, and forbids Domain. Blocks subdomain / cross-origin
@@ -93,7 +99,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus,metrics
+        include: health,info,prometheus,metrics,auditchain
   endpoint:
     health:
       show-details: when-authorized
@@ -191,11 +197,111 @@ app:
     # The SPA reads that cookie and echoes it in the `X-XSRF-TOKEN` request header.
     csrf:
       enabled: false
+    # ── port-based rate limiter (Caffeine | Bucket4j-Redis) ──
+    # `backend`             — `caffeine` (default, in-process bounded sliding
+    #                         window) or `redis` (distributed token bucket
+    #                         on Redis via Lettuce + Bucket4j 8.x). Selection is one
+    #                         env-var flip: APP_SECURITY_RATE_LIMIT_BACKEND=redis.
+    # `requests-per-minute` — refill rate. Falls back to the legacy
+    #                         `app.rate-limit.requests-per-minute` when unset.
+    # `window-seconds`      — refill window length.
+    # `burst-capacity`      — token-bucket burst (Bucket4j only). 0 ⇒ = rpm,
+    #                         which reproduces fixed-window behaviour.
+    # `max-tracked-keys`    — Caffeine cap (~64 B/entry ⇒ ≈3 MB at 50 000).
+    #                         Ignored when backend=redis (logged at startup).
+    # `fail-open`           — Redis adapter only. true (default) = let request
+    #                         through on Redis errors + WARN log; false = 429
+    #                         (fail-closed).
+    # `redis.key-prefix`    — Bucket4j namespace; segregated from session keys.
+    rate-limit:
+      backend: ${RATE_LIMIT_BACKEND:caffeine}
+      requests-per-minute: ${app.rate-limit.requests-per-minute:100}
+      window-seconds: 60
+      burst-capacity: 0
+      max-tracked-keys: 50000
+      fail-open: ${RATE_LIMIT_FAIL_OPEN:true}
+      redis:
+        key-prefix: ${RATE_LIMIT_REDIS_PREFIX:rl:}
+      # ── per-route bucket policies ──────────────────
+      # The first matching `path-pattern` wins (YAML key order is preserved).
+      # Unmatched requests use `default-policy.*` (which back-fills from the
+      # legacy single-policy keys above when left unset).
+      default-policy:
+        requests-per-minute: 100
+        window-seconds: 60
+        burst-capacity: 100
+      policies:
+        transfers:
+          path-pattern: /api/v1/transfers/**
+          requests-per-minute: 20
+          window-seconds: 60
+          burst-capacity: 20
+        accounts:
+          path-pattern: /api/v1/accounts/**
+          requests-per-minute: 60
+          window-seconds: 60
+          burst-capacity: 60
+      # ── Resilience4j circuit breaker ───────────────
+      # Wraps the Bucket4j-Redis adapter. When OPEN, requests transparently
+      # fall back to an in-process Caffeine sidecar (bucket sizing identical;
+      # only cluster-wide aggregation is lost). Enable in production where
+      # Redis is the limiter backend.
+      circuit-breaker:
+        enabled: ${RATE_LIMIT_CB_ENABLED:false}
+        failure-rate-threshold: 50
+        sliding-window-size: 20
+        minimum-number-of-calls: 5
+        wait-duration-in-open-state-seconds: 30
+        permitted-number-of-calls-in-half-open-state: 3
+    # ── IP-reputation pre-filter ───────────────────
+    # Runs before the rate limiter. Blocks /api/** requests whose remote
+    # address is on a curated CIDR block-list before any token-bucket cost
+    # is incurred. Enable in production by setting `enabled=true` and
+    # populating `sources` (Spamhaus DROP / EDROP) and / or
+    # `static-block-list` (operator-curated). The refresher pulls each
+    # source on `refresh-interval` and atomically swaps the snapshot;
+    # failures are fail-static — the previous snapshot is preserved.
+    ip-reputation:
+      enabled: ${IP_REPUTATION_ENABLED:false}
+      refresh-interval: ${IP_REPUTATION_REFRESH:PT1H}
+      refresh-interval-ms: ${IP_REPUTATION_REFRESH_MS:3600000}
+      initial-delay-ms: ${IP_REPUTATION_INITIAL_DELAY_MS:60000}
+      sources: []
+      static-block-list: []
     jwt:
       audiences: poc-fintech-api
       clock-skew-seconds: 30
       allowed-algorithms: RS256,PS256
       required-claims: sub,iat,exp
+  # ── Transactional Outbox shedding ─────────────────
+  # Periodically deletes published outbox rows older than `retention` so the
+  # table doesn't grow unboundedly. Only `published=true` rows are eligible;
+  # unpublished rows are preserved regardless of age (alerting hook for stuck
+  # publishers). Set `enabled=false` in environments that need to keep the
+  # full event log indefinitely (e.g. forensic mirrors).
+  outbox:
+    shedding:
+      enabled: ${OUTBOX_SHEDDING_ENABLED:true}
+      retention: ${OUTBOX_RETENTION:P7D}
+      interval-ms: ${OUTBOX_SHEDDING_INTERVAL_MS:3600000}
+      initial-delay-ms: ${OUTBOX_SHEDDING_INITIAL_DELAY_MS:60000}
+  audit:
+    # ── Tamper-evident audit chain (PCI DSS §10.5, NIST AU-9(3)) ──
+    # multi-key rotation:
+    #   `keys`            — comma-separated list of `id:base64` pairs. The first
+    #                       entry's `id` is used by the writer when
+    #                       `active-key-id` is unset. Verification looks up
+    #                       each row's recorded `key_id` against this ring.
+    #   `active-key-id`   — id of the key the writer signs new rows with.
+    #                       Bump after adding a new key, then restart.
+    #   `hmac-key-base64` — single-key alias, becomes id=1 if `keys`
+    #                       is empty. Kept for back-compat.
+    # In production, source key material from a KMS/HSM (Vault, AWS KMS,
+    # GCP KMS) and pass via env vars. Each key must decode to ≥ 32 bytes.
+    chain:
+      hmac-key-base64: ${AUDIT_CHAIN_HMAC_KEY:}
+      keys: ${AUDIT_CHAIN_KEYS:}
+      active-key-id: ${AUDIT_CHAIN_ACTIVE_KEY_ID:1}
       authorized-party: poc-fintech-bff
 
 # ── Logging (MDC-enriched pattern with userId, requestId, traceId, spanId) ─
@@ -261,10 +367,9 @@ logging:
 # ──────────────────────────────────────────────────────────────────────────
 # Profile: bff
 # Activate with SPRING_PROFILES_ACTIVE=bff (combinable with `json`).
-# Turns on CSRF double-submit cookie protection. Intended for the Phase-2
-# migration where the React SPA calls the backend with session cookies on
+# Turns on CSRF double-submit cookie protection. Intended for the React SPA that calls the backend with session cookies on
 # the same origin (via reverse proxy) and the backend is the OAuth2 Client
-# that holds the access/refresh token server-side. See ADR-0010.
+# that holds the access/refresh token server-side.
 # ──────────────────────────────────────────────────────────────────────────
 spring:
   config:
@@ -275,3 +380,54 @@ app:
   security:
     csrf:
       enabled: true
+
+# ── health indicator hygiene under `bff` ────────────
+# spring-boot-starter-data-redis auto-registers a Redis health
+# indicator that turns /actuator/health into a 503 when Redis is unreachable.
+# That is the correct production signal, but the BFF smoke test boots without
+# a Redis container (BFF_SESSION_STORE=none, RATE_LIMIT_BACKEND=caffeine),
+# so we suppress the indicator unless either backend is actually using Redis.
+management:
+  health:
+    redis:
+      enabled: ${REDIS_HEALTH_ENABLED:false}
+
+# ── Distributed session storage ─────────────────────
+# Default is `none` (= keep in-memory Tomcat session) so the smoke test
+# boots without a Redis testcontainer. Production sets BFF_SESSION_STORE=redis
+# alongside REDIS_HOST/REDIS_PORT/REDIS_PASSWORD/REDIS_SSL to externalise
+# session state for horizontal scale + zero-downtime rolling restarts.
+spring.session:
+  store-type: ${BFF_SESSION_STORE:none}
+  redis:
+    namespace: poc-fintech:bff:session
+    flush-mode: on_save
+spring.data.redis:
+  host: ${REDIS_HOST:localhost}
+  port: ${REDIS_PORT:6379}
+  password: ${REDIS_PASSWORD:}
+  ssl:
+    enabled: ${REDIS_SSL:false}
+  timeout: 2s
+
+# ── OAuth2 Client (server-side Authorization Code + PKCE) ───────────────
+# Activated under the `bff` profile. The backend — not the browser — is the
+# OAuth2 Client. Tokens never leave the server; the SPA authenticates via
+# the __Host-SESSION cookie only. The client secret is sourced from the
+# KEYCLOAK_BFF_CLIENT_SECRET environment variable in real deployments;
+# the default below matches docker/keycloak/fintech-realm.json for dev.
+spring.security.oauth2.client:
+  registration:
+    keycloak:
+      client-id: poc-fintech-bff-server
+      client-secret: ${KEYCLOAK_BFF_CLIENT_SECRET:poc-fintech-bff-dev-secret-change-me}
+      authorization-grant-type: authorization_code
+      client-authentication-method: client_secret_post
+      scope: openid,profile,email
+      # Default pattern; /login/oauth2/code/keycloak must be in Keycloak's redirectUris.
+      redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+  provider:
+    keycloak:
+      issuer-uri: http://localhost:8180/realms/fintech
+      user-name-attribute: preferred_username
+

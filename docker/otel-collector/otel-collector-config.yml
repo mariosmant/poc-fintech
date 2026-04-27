@@ -1,0 +1,117 @@
+# ============================================================================
+# OpenTelemetry Collector configuration.
+#
+# Receives OTLP traces from the Spring Boot application (already exporting to
+# http://localhost:4318/v1/traces per the boot `application.yml`), applies a
+# tail-based sampling policy that always keeps errors + slow spans + a 10 %
+# baseline, enriches resource attributes, and exports to:
+#
+#   * Prometheus (metrics scrape endpoint at :8889 / mtl exposition).
+#   * Logging exporter (debug / dev only — pretty-prints to stdout).
+#   * OTLP forward (configurable backend — Tempo, Jaeger, Honeycomb, etc.;
+#     left disabled by default so the dev stack runs without an external
+#     trace store).
+#
+# Standards mapping:
+#   OpenTelemetry Specification v1.38 — Collector pipelines.
+#   NIST SP 800-92 — Computer Security Log Management.
+#   SOC 2 CC7.2 — System monitoring.
+# ============================================================================
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # Memory limiter — refuse new spans when the collector heap exceeds the
+  # configured limit. Prevents OOM cascades when the trace pipeline saturates.
+  memory_limiter:
+    check_interval: 5s
+    limit_mib: 512
+    spike_limit_mib: 128
+
+  # Resource enrichment — pin deployment.environment + service.namespace
+  # so multi-environment dashboards can filter without app-side config.
+  resource:
+    attributes:
+      - key: deployment.environment
+        value: ${env:OTEL_DEPLOYMENT_ENVIRONMENT:-dev}
+        action: upsert
+      - key: service.namespace
+        value: poc-fintech
+        action: upsert
+
+  # Tail-based sampling — decides per-trace, after the whole trace is
+  # collected. Always-keep policies fire on errors and slow spans;
+  # baseline keeps 10 % of "normal" traces for trend analysis.
+  tail_sampling:
+    decision_wait: 10s
+    num_traces: 50000
+    expected_new_traces_per_sec: 100
+    policies:
+      - name: errors-always
+        type: status_code
+        status_code:
+          status_codes: [ ERROR ]
+      - name: slow-traces
+        type: latency
+        latency:
+          threshold_ms: 1000
+      - name: rate-limited-always
+        type: string_attribute
+        string_attribute:
+          key: http.response.status_code
+          values: [ "429", "403" ]
+      - name: baseline-10pct
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: 10
+
+  batch:
+    timeout: 10s
+    send_batch_size: 1024
+    send_batch_max_size: 2048
+
+exporters:
+  # Pretty-printed stdout — dev only. Disable in production.
+  debug:
+    verbosity: normal
+    sampling_initial: 5
+    sampling_thereafter: 200
+
+  # Prometheus exposition (scraped by the Prometheus container).
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    namespace: poc_fintech
+    send_timestamps: true
+    metric_expiration: 5m
+
+  # OTLP forward — point at Tempo / Jaeger / Honeycomb / Datadog. Disabled
+  # by default so the dev stack runs offline.
+  # otlp/backend:
+  #   endpoint: ${env:OTEL_FORWARD_ENDPOINT}
+  #   tls:
+  #     insecure: false
+  #   headers:
+  #     authorization: Bearer ${env:OTEL_FORWARD_TOKEN}
+
+service:
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      address: 0.0.0.0:8888
+  pipelines:
+    traces:
+      receivers: [ otlp ]
+      processors: [ memory_limiter, resource, tail_sampling, batch ]
+      exporters: [ debug ]
+    metrics:
+      receivers: [ otlp ]
+      processors: [ memory_limiter, resource, batch ]
+      exporters: [ prometheus, debug ]
+

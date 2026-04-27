@@ -56,6 +56,8 @@ public final class ProblemDetails {
         FORBIDDEN            ("urn:fintech:error:forbidden",            "Access Denied"),
         UNAUTHORIZED         ("urn:fintech:error:unauthorized",         "Unauthorized"),
         VALIDATION           ("urn:fintech:error:validation",           "Validation Error"),
+        RATE_LIMITED         ("urn:fintech:error:rate-limit",           "Too Many Requests"),
+        BLOCKED_BY_REPUTATION("urn:fintech:error:blocked-by-reputation", "Blocked by IP reputation"),
         INTERNAL             ("urn:fintech:error:internal",             "Internal Server Error");
 
         private final URI type;

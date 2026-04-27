@@ -14,13 +14,43 @@ import java.time.Instant;
 import java.util.Map;
 
 /**
- * FX rate adapter — provides static exchange rates for the POC.
+ * {@code FxRateAdapter} — outbound adapter for the {@link FxRatePort} port.
+ * Provides foreign-exchange conversion rates for cross-currency transfers.
  *
- * <p>In production, this would call an external FX rates API (e.g., ECB, Bloomberg).
- * Rates are expressed as: 1 unit of source = rate units of target.</p>
+ * <h2>Architecture role</h2>
+ * <ul>
+ *   <li><b>Hexagonal / Ports &amp; Adapters:</b> stand-in for a market-data
+ *       feed (ECB daily reference, Bloomberg BXT, Refinitiv) behind the
+ *       {@link FxRatePort} domain port. Everything downstream sees only the
+ *       port — the saga has no idea whether rates came from a static table,
+ *       a WebSocket feed, or an HTTP cache.</li>
+ *   <li><b>Rate triangulation through USD:</b> the internal table stores one
+ *       rate per currency (all against USD). A cross-pair such as
+ *       {@code EUR → GBP} is computed as
+ *       {@code rate(USD → GBP) / rate(USD → EUR)} — O(N) storage instead of
+ *       O(N²) of a pair-table, and mathematically consistent (no missing
+ *       diagonals, no inverse inconsistencies).</li>
+ *   <li><b>Resilience4j Circuit Breaker + Retry:</b> identical wrapping to
+ *       {@code FraudDetectionAdapter}; in production a stale rate is better
+ *       than a transfer outage, so the circuit's fallback returns the most
+ *       recent cached rate (TODO when the cache is wired) with a widened
+ *       spread.</li>
+ * </ul>
  *
- * <p>Wrapped with Resilience4j {@code @CircuitBreaker} and {@code @Retry}
- * with exponential backoff for production resilience.</p>
+ * <h2>Fintech concepts</h2>
+ * <ul>
+ *   <li><b>Banker's rounding</b> is applied via {@link Money}; the conversion
+ *       itself uses {@link BigDecimal} throughout — see
+ *       {@link com.mariosmant.fintech.domain.model.vo.Money} for the rationale
+ *       against floating-point in monetary code.</li>
+ *   <li><b>Bid/ask spread</b> is a single mid-market rate in this POC; real
+ *       deployments would expose separate buy/sell sides and apply a merchant
+ *       spread on the application side.</li>
+ *   <li><b>PSD2 price transparency (RTS Art. 59)</b> — the rate and its
+ *       timestamp are persisted on the {@link com.mariosmant.fintech.domain.model.Transfer}
+ *       aggregate so the customer statement can show the exact conversion
+ *       applied at the time of the transfer.</li>
+ * </ul>
  *
  * @author mariosmant
  * @since 1.0.0

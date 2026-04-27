@@ -1,8 +1,11 @@
 /**
  * Centralized API client for the POC Fintech backend.
  *
- * Uses fetch() with Bearer token authentication from Keycloak.
- * All requests include the JWT token for authorization.
+ * Supports both auth modes:
+ * - Resource-Server (default): Bearer JWT from Keycloak-JS in Authorization header.
+ * - BFF (when SPRING_PROFILES_ACTIVE=bff): same-origin session cookie + double-submit
+ *   CSRF token (echoes the __Host-XSRF-TOKEN cookie into the X-XSRF-TOKEN header on
+ *   state-changing methods). Safe methods are exempt.
  */
 import type {
   Account,
@@ -28,9 +31,27 @@ export class ApiError extends Error {
   }
 }
 
+/** Read a cookie value by name. Returns empty string if missing. */
+function readCookie(name: string): string {
+  if (typeof document === 'undefined') return '';
+  const target = `${name}=`;
+  for (const raw of document.cookie.split(';')) {
+    const c = raw.trim();
+    if (c.startsWith(target)) return decodeURIComponent(c.substring(target.length));
+  }
+  return '';
+}
+
+/** Returns true for HTTP methods that need CSRF protection. */
+function needsCsrf(method: string): boolean {
+  const m = method.toUpperCase();
+  return m !== 'GET' && m !== 'HEAD' && m !== 'OPTIONS' && m !== 'TRACE';
+}
+
 /**
- * Returns authorization headers with the current Keycloak JWT.
- * Refreshes token if about to expire.
+ * Returns authorization headers with the current Keycloak JWT (Resource-Server mode).
+ * In BFF mode no Bearer token is held by the SPA — the session cookie carries auth
+ * and the X-XSRF-TOKEN header carries CSRF, both attached in {@link request} below.
  */
 async function getAuthHeaders(): Promise<Record<string, string>> {
   if (keycloak.authenticated) {
@@ -50,17 +71,31 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
 }
 
 /**
- * Generic fetch wrapper with error handling and JWT auth.
- * Throws {@link ApiError} on non-2xx responses.
+ * Generic fetch wrapper with error handling, JWT/Bearer auth (Resource-Server)
+ * or session-cookie + CSRF auth (BFF). Throws {@link ApiError} on non-2xx responses.
  */
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const authHeaders = await getAuthHeaders();
+  const method = (init?.method ?? 'GET').toUpperCase();
+  const headers = new Headers({ ...authHeaders, ...(init?.headers as Record<string, string> | undefined) });
+
+  // BFF double-submit CSRF: when the __Host-XSRF-TOKEN cookie is present
+  // (server-issued by CookieCsrfTokenRepository in BFF mode), echo it as the
+  // X-XSRF-TOKEN header on mutating requests. No-op in Resource-Server mode.
+  if (needsCsrf(method)) {
+    const csrf = readCookie('__Host-XSRF-TOKEN');
+    if (csrf && !headers.has('X-XSRF-TOKEN')) {
+      headers.set('X-XSRF-TOKEN', csrf);
+    }
+  }
+
   const res = await fetch(`${BASE}${url}`, {
     ...init,
-    headers: {
-      ...authHeaders,
-      ...init?.headers,
-    },
+    method,
+    headers,
+    // Same-origin only — Vite dev proxy + reverse proxy make /api same-origin
+    // with the SPA, so the __Host-SESSION cookie is auto-attached. Never 'include'.
+    credentials: 'same-origin',
   });
 
   if (res.status === 401) {

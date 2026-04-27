@@ -1,7 +1,6 @@
 package com.mariosmant.fintech.application.command;
 
 import java.math.BigDecimal;
-import java.util.UUID;
 
 /**
  * CQRS Command: creates a new account.
@@ -19,11 +18,4 @@ public record CreateAccountCommand(
         BigDecimal initialBalance,
         String userId
 ) {
-
-    /**
-     * Factory with zero initial balance.
-     */
-    public static CreateAccountCommand withZeroBalance(String ownerName, String currency, String userId) {
-        return new CreateAccountCommand(ownerName, currency, BigDecimal.ZERO, userId);
-    }
 }

@@ -1,0 +1,57 @@
+# Keep the Docker build context lean and free of secrets.
+
+# VCS / IDE
+.git
+.gitignore
+.gitattributes
+.idea
+.vscode
+*.iml
+*.ipr
+*.iws
+
+# Build outputs (re-built inside the builder stage)
+**/target
+**/build
+**/out
+**/.gradle
+**/dist
+
+# Frontend (built separately; not bundled into the Java image)
+poc-fintech-frontend/node_modules
+poc-fintech-frontend/dist
+poc-fintech-frontend/.vite
+poc-fintech-frontend/coverage
+poc-fintech-frontend/tsconfig.tsbuildinfo
+
+# Local / test artefacts
+test-output.txt
+**/*.log
+**/surefire-reports
+**/failsafe-reports
+**/dependency-check-report.*
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+
+# Docker / Compose data volumes (POC-only)
+docker/**/data
+
+# Secrets — never bake into an image
+**/*.pem
+**/*.p12
+**/*.jks
+**/*.keystore
+**/*.truststore
+.env
+.env.*
+!.env.example
+
+# CI / docs not needed at runtime
+.github
+docs
+*.md
+!README.md
+LICENSE
+

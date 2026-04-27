@@ -19,11 +19,28 @@ import java.util.UUID;
 
 /**
  * AOP Aspect that intercepts methods annotated with {@link Audited} and
- * persists an audit trail to the {@code audit_log} table.
+ * persists an audit trail to the {@code audit_log} table <b>through the
+ * HMAC tamper-evidence chain</b> ({@link AuditChainWriter}).
  *
- * <p>Captures: user ID, username, action, resource type, IP address,
- * HTTP method, request URI, response status, and duration.
- * Compliant with NIST AU-2 (Audit Events) and SOC 2 CC7.2.</p>
+ * <h2>Captured fields</h2>
+ * <p>user ID, username, action, resource type, IP address, HTTP method,
+ * request URI, response status, duration.</p>
+ *
+ * <h2>Architecture notes</h2>
+ * <ul>
+ *   <li><b>Cross-cutting concern, not business logic</b> — realised as a
+ *       Spring AOP {@code @Around} advice so audit responsibility never
+ *       pollutes the controllers / use cases (OWASP ASVS V7.1.1).</li>
+ *   <li><b>Best-effort writes</b> — a failure in the audit path must not
+ *       roll back the business method. The chain writer uses a separate
+ *       {@code REQUIRES_NEW} transaction (see {@link AuditChainWriter}).</li>
+ *   <li><b>Tamper evidence</b> — the writer computes a row HMAC-SHA256 over
+ *       {@code (prev_hash || chain_seq || canonical(row))}. Verified by
+ *       {@link AuditChainVerifier} on demand (actuator endpoint).</li>
+ * </ul>
+ *
+ * <h2>Standards mapping</h2>
+ * <p>NIST AU-2 / AU-9(3) / AU-10 · SOC 2 CC7.2 · PCI DSS v4.0.1 §10.2 / §10.5.</p>
  *
  * @author mariosmant
  * @since 1.0.0
@@ -34,10 +51,10 @@ public class AuditAspect {
 
     private static final Logger log = LoggerFactory.getLogger(AuditAspect.class);
 
-    private final AuditLogRepository auditLogRepository;
+    private final AuditChainWriter chainWriter;
 
-    public AuditAspect(AuditLogRepository auditLogRepository) {
-        this.auditLogRepository = auditLogRepository;
+    public AuditAspect(AuditChainWriter chainWriter) {
+        this.chainWriter = chainWriter;
     }
 
     @Around("@annotation(audited)")
@@ -111,7 +128,8 @@ public class AuditAspect {
                         responseStatus,
                         durationMs
                 );
-                auditLogRepository.save(auditLog);
+                // Route through the HMAC chain writer — same table, chained row_hash.
+                chainWriter.append(auditLog);
 
                 log.info("AUDIT: action={}, user={}, resource={}/{}, ip={}, status={}, duration={}ms",
                         audited.action(), username, audited.resourceType(), resourceId,

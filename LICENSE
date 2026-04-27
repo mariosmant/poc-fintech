@@ -1,0 +1,42 @@
+PROPRIETARY LICENSE — ALL RIGHTS RESERVED
+
+Copyright (c) 2026 Marios Mantratzis. All rights reserved.
+
+This software and its source code (the "Software") are the proprietary and
+confidential property of Marios Mantratzis (the "Author"). The Software is
+provided for evaluation, reference, and authorised internal use only.
+
+NO LICENSE IS GRANTED, EXPRESSLY OR BY IMPLICATION, TO ANY PATENT, COPYRIGHT,
+TRADEMARK, OR OTHER INTELLECTUAL-PROPERTY RIGHT OF THE AUTHOR EXCEPT AS
+EXPLICITLY STATED IN A SEPARATE WRITTEN AGREEMENT SIGNED BY THE AUTHOR.
+
+Without the prior written consent of the Author, no person may:
+
+  1. copy, reproduce, or redistribute the Software, in source or binary form,
+     in whole or in part;
+  2. modify, adapt, translate, or create derivative works of the Software;
+  3. publicly display, publicly perform, distribute, or sublicense the Software,
+     except that the Software may be stored and displayed in a controlled-access
+     source-code repository or similar system for access by authorised users
+     solely for evaluation, reference, or authorised internal use.
+  4. sell, rent, lease, lend, or otherwise commercially exploit the Software;
+  5. reverse-engineer, decompile, or disassemble the Software, except to the
+     extent such activity is expressly permitted by applicable law
+     notwithstanding this restriction;
+  6. remove or alter any copyright, trademark, or other proprietary notices
+     contained in the Software.
+
+Third-party open-source components included with or used by the Software
+remain governed by their own respective licenses; nothing in this LICENSE
+modifies the rights and obligations attached to such third-party components.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN
+ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+For licensing enquiries, contact the Author.
+
+SPDX-License-Identifier: LicenseRef-Proprietary

@@ -45,6 +45,14 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
         </dependency>
+        <!-- OAuth2 Client (activated by the `bff` Spring profile so the backend
+             holds the access/refresh token). Enables the .oauth2Login() filter
+             chain in BffSecurityConfig — Authorization Code + PKCE is performed
+             server-side and the SPA never touches the access/refresh token. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-client</artifactId>
+        </dependency>
         <!-- AspectJ weaver for @Aspect support (spring-boot-starter-aop removed in Boot 4.x;
              spring-aop is already a transitive dependency of spring-boot-starter-web) -->
         <dependency>
@@ -120,6 +128,47 @@
             <artifactId>jackson-databind</artifactId>
         </dependency>
 
+        <!-- ── Caffeine ──────────────────────────────────────────────────
+             Bounded, eviction-aware in-memory cache for the single-pod
+             (`backend=caffeine`) RateLimiter adapter. Replaces the unbounded
+             ConcurrentHashMap so a long-tailed key set (e.g. one entry per IP)
+             cannot exhaust heap. -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
+        <!-- Spring Session + Redis — horizontally-scalable, server-side
+             HttpSession storage for the BFF profile. Activated only when
+             `spring.session.store-type=redis` is set (default `none` keeps
+             the in-memory Tomcat session). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.session</groupId>
+            <artifactId>spring-session-data-redis</artifactId>
+        </dependency>
+
+        <!-- ── Bucket4j + Lettuce ────────────────────────────────────────
+             Distributed token-bucket rate limiter selected by
+             `app.security.rate-limit.backend=redis`. Reuses the Lettuce
+             RedisClient already wired by spring-boot-starter-data-redis
+             (no second Redis client). Caffeine remains the default so
+             single-pod / local-dev deployments are unaffected. -->
+        <dependency>
+            <groupId>com.bucket4j</groupId>
+            <artifactId>bucket4j_jdk17-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.bucket4j</groupId>
+            <artifactId>bucket4j_jdk17-redis-common</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.bucket4j</groupId>
+            <artifactId>bucket4j_jdk17-lettuce</artifactId>
+        </dependency>
+
         <!-- Test -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -136,6 +185,39 @@
             <artifactId>spring-kafka-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Testcontainers — Bucket4jRedisRateLimiterIT spins a Redis 7
+             container to verify the distributed adapter. Versions are
+             managed by Spring Boot's BOM. -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Enable Failsafe so Bucket4jRedisRateLimiterIT runs during
+                 `mvn verify`. Surefire only picks up *Test.java; IT tests use
+                 Testcontainers and live in the integration-test phase. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 </project>
 

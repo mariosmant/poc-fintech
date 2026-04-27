@@ -23,7 +23,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *
  * <p>Covers the identity projection ({@code /bff/user}) and server-side logout
  * ({@code /bff/logout}) contracts required by the React BFF client
- * ({@code src/api/bffClient.ts}) and ADR-0010.</p>
+ * ({@code src/api/bffClient.ts}).</p>
  *
  * <p>Runs under the {@code test} profile with {@link TestSecurityConfig}, whose
  * mock {@code JwtDecoder} emits a token carrying
@@ -55,6 +55,12 @@ class BffControllerTest {
                                 .claim("email", "alice@example.com")
                                 .claim("realm_access", java.util.Map.of(
                                         "roles", java.util.List.of("user")))
+                        ).authorities(
+                                // The jwt() post-processor bypasses our production
+                                // KeycloakJwtAuthoritiesConverter, so authorities must
+                                // be supplied explicitly here to mirror what the real
+                                // converter would emit for realm_access.roles=[user].
+                                new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_USER")
                         )))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.authenticated").value(true))
@@ -75,6 +81,9 @@ class BffControllerTest {
                                 .claim("preferred_username", "admin")
                                 .claim("realm_access", java.util.Map.of(
                                         "roles", java.util.List.of("user", "admin")))
+                        ).authorities(
+                                new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_USER"),
+                                new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN")
                         )))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.admin").value(true))

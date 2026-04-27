@@ -1,28 +1,12 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import keycloak from './keycloak';
 import { redirectToLogin } from './loginGuard';
+import { AuthContext, useAuth, type AuthContextType } from './authContext';
 
-interface AuthContextType {
-  isAuthenticated: boolean;
-  isLoading: boolean;
-  userId: string | null;
-  username: string | null;
-  token: string | null;
-  roles: string[];
-  isAdmin: boolean;
-  logout: () => void;
-}
-
-const AuthContext = createContext<AuthContextType>({
-  isAuthenticated: false,
-  isLoading: true,
-  userId: null,
-  username: null,
-  token: null,
-  roles: [],
-  isAdmin: false,
-  logout: () => {},
-});
+// Re-export so existing `import { useAuth } from '../../auth/AuthProvider'`
+// statements keep working without touching every consumer.
+export { useAuth };
+export type { AuthContextType };
 
 /**
  * Module-level singleton promise guarding `keycloak.init()`.
@@ -128,9 +112,3 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return <AuthContext.Provider value={contextValue}>{children}</AuthContext.Provider>;
 }
-
-/** Hook to access authentication state. */
-export function useAuth() {
-  return useContext(AuthContext);
-}
-

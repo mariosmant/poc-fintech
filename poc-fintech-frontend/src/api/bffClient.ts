@@ -24,9 +24,9 @@
  *
  * <p>This module is tree-shakeable and has no dependency on <code>keycloak-js</code> —
  * it is the drop-in replacement for {@code api/client.ts} once the backend is running
- * under the <code>bff</code> profile (ADR-0010, Phase 2).</p>
+ * under the <code>bff</code> profile.</p>
  *
- * @see ../api/client.ts — legacy JWT-Bearer client (kept during the Phase-1/2 overlap)
+ * @see ../api/client.ts — legacy JWT-Bearer client
  */
 
 import type { ProblemDetail } from '../types/api';

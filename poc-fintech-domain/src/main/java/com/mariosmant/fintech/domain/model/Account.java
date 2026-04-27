@@ -14,13 +14,51 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * Account Aggregate Root — represents a financial account holding a balance.
+ * {@code Account} — <b>Aggregate Root</b> of the Account bounded context.
  *
- * <p><b>Invariants:</b></p>
+ * <h2>Architecture role</h2>
  * <ul>
- *   <li>Balance must never go negative (debit guard).</li>
- *   <li>All mutations register the corresponding domain event.</li>
- *   <li>Optimistic locking via {@code version} field — no pessimistic locks.</li>
+ *   <li><b>DDD Aggregate Root:</b> the single consistency boundary for its
+ *       internal state ({@code balance}, {@code version}). All mutations go
+ *       through this class — the persistence adapter reconstitutes it from
+ *       the {@code accounts} row (+ owner_id) and persists it back atomically
+ *       (DDD — Evans, ch. 6).</li>
+ *   <li><b>Hexagonal Architecture — inside the domain hexagon:</b> no Spring,
+ *       no JPA annotations, no framework coupling. Persistence is injected
+ *       through the outbound {@code AccountRepository} port.</li>
+ *   <li><b>Optimistic concurrency:</b> the {@code version} field is mapped to
+ *       a JPA {@code @Version} column in the infrastructure layer — two
+ *       concurrent transfers on the same account will cause one to fail with
+ *       {@code OptimisticLockException}, which the Saga Orchestrator turns
+ *       into a compensation step (no deadlocks, no row locks).</li>
+ *   <li><b>Event Sourcing (lightweight):</b> every balance mutation
+ *       {@link #registerEvent registers} a domain event on the aggregate.
+ *       The application layer drains these events into the Transactional
+ *       Outbox so that downstream read models (ledger, notifications) stay
+ *       eventually consistent without dual writes.</li>
+ * </ul>
+ *
+ * <h2>Invariants</h2>
+ * <ul>
+ *   <li>Balance must never go negative — {@link #debit} throws
+ *       {@link InsufficientFundsException} before mutating state.</li>
+ *   <li>Every mutation emits exactly one corresponding domain event.</li>
+ *   <li>Currency match is enforced on both debit and credit — cross-currency
+ *       transfers go through the FX conversion step of the Saga first, so by
+ *       the time this aggregate is touched amounts are already in its own
+ *       currency.</li>
+ * </ul>
+ *
+ * <h2>PCI DSS / NIST touchpoints</h2>
+ * <ul>
+ *   <li><b>PCI DSS §3.3 analogue</b>: {@link #iban} is sensitive data;
+ *       callers rendering it in UI / logs must route through
+ *       {@link com.mariosmant.fintech.domain.util.IbanMasking}.</li>
+ *   <li><b>NIST AU-2</b>: mutations cross into {@code @Audited} use-case
+ *       handlers in the application layer, which produce the audit trail.</li>
+ *   <li><b>Ownership</b>: {@code owner_id} is persisted separately (migration
+ *       V6) and is set from the JWT {@code sub} claim at use-case entry —
+ *       never from client input (OWASP API1: Broken Object-Level Auth).</li>
  * </ul>
  *
  * @author mariosmant

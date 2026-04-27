@@ -53,7 +53,12 @@ public class CorsConfig {
         ));
         config.setExposedHeaders(List.of(
                 "X-Request-ID",
-                "X-RateLimit-Remaining",
+                // IETF draft-ietf-httpapi-ratelimit-headers.
+                // only the IETF triplet + Retry-After are exposed.
+                "RateLimit-Limit",
+                "RateLimit-Remaining",
+                "RateLimit-Reset",
+                "Retry-After",
                 "Authorization"
         ));
         config.setAllowCredentials(true);

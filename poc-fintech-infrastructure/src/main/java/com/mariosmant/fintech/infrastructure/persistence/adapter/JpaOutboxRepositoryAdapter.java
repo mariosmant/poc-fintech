@@ -4,7 +4,6 @@ import com.mariosmant.fintech.application.outbox.OutboxEvent;
 import com.mariosmant.fintech.application.port.OutboxRepository;
 import com.mariosmant.fintech.infrastructure.persistence.mapper.OutboxEventMapper;
 import com.mariosmant.fintech.infrastructure.persistence.repository.SpringDataOutboxRepository;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -13,6 +12,11 @@ import java.util.UUID;
 
 /**
  * JPA adapter implementing the {@link OutboxRepository} application port.
+ *
+ * <p>{@link #findUnpublished(int)} delegates to the native
+ * {@code SKIP LOCKED} query so multiple boot instances can poll the same
+ * outbox concurrently without double-publishing. The locks held on
+ * returned rows are released when the enclosing transaction commits.</p>
  *
  * @author mariosmant
  * @since 1.0.0
@@ -35,9 +39,9 @@ public class JpaOutboxRepositoryAdapter implements OutboxRepository {
     }
 
     @Override
-    @Transactional(readOnly = true)
     public List<OutboxEvent> findUnpublished(int batchSize) {
-        return jpaRepo.findUnpublished(PageRequest.ofSize(batchSize))
+        // requires a writable transaction so Postgres can take row locks.
+        return jpaRepo.findUnpublishedSkipLocked(batchSize)
                 .stream().map(OutboxEventMapper::toDomain).toList();
     }
 
