@@ -17,7 +17,7 @@ import org.springframework.context.annotation.Primary;
 
 /**
  * Jackson {@link ObjectMapper} hardening configuration aligned with
- * NIST SP 800-53 (SC-8, SI-10), SOG-IS, and SOC 2 Type II controls.
+ * NIST SP 800-53 (SC-8, SI-10) and SOC 2 Type II controls.
  *
  * <p>Uses Jackson 3.x ({@code tools.jackson}) with the immutable builder pattern.
  * The deprecated {@code com.fasterxml.jackson} namespace is no longer used for core/databind;
@@ -125,7 +125,7 @@ public class JacksonConfig {
 
                 .build();
 
-        log.info("Jackson JsonMapper configured with NIST/SOG-IS/SOC 2 hardening [tools.jackson 3.x]");
+        log.info("Jackson JsonMapper configured with NIST/SOC 2 hardening [tools.jackson 3.x]");
         return mapper;
     }
 }

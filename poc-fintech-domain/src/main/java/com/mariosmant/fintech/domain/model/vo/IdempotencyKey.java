@@ -6,7 +6,7 @@ import java.util.Objects;
  * Value Object representing a client-supplied idempotency key.
  *
  * <p>Used to ensure <b>exactly-once</b> processing of transfer requests.
- * The key is hashed using SHA3-256 (NIST-approved, SOGIS-compliant,
+ * The key is hashed using SHA3-256 (NIST-approved,
  * collision-minimized) before storage to prevent enumeration attacks.</p>
  *
  * @param value the raw idempotency key string

@@ -17,7 +17,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 
 /**
- * Integration tests verifying NIST/SOG-IS/SOC 2 security headers
+ * Integration tests verifying NIST/SOC 2 security headers
  * are correctly applied to HTTP responses.
  *
  * <p>Uses full Spring context with Testcontainers to ensure security

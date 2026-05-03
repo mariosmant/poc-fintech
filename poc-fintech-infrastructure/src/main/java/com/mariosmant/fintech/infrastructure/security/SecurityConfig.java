@@ -18,8 +18,8 @@ import org.springframework.web.cors.CorsConfigurationSource;
 
 
 /**
- * Security configuration aligned with NIST SP 800-53 Rev 5, NIST SP 800-63B (AAL2),
- * SOG-IS Crypto Evaluation Scheme, and SOC 2 Type II Trust Services Criteria
+ * Security configuration aligned with NIST SP 800-53 Rev 5, NIST SP 800-63B (AAL2)
+ * and SOC 2 Type II Trust Services Criteria
  * (CC6.1 Logical Access, CC6.6 Transmission, CC7.2 Monitoring, CC8.1 Change Mgmt).
  *
  * <p>Integrates Keycloak as OAuth2/OIDC identity provider via JWT resource server.
@@ -68,7 +68,6 @@ import org.springframework.web.cors.CorsConfigurationSource;
  * @author mariosmant
  * @see <a href="https://csrc.nist.gov/publications/detail/sp/800-53/rev-5/final">NIST SP 800-53 Rev 5</a>
  * @see <a href="https://csrc.nist.gov/publications/detail/sp/800-63b/final">NIST SP 800-63B (AAL2)</a>
- * @see <a href="https://www.sogis.eu/">SOG-IS Crypto Evaluation Scheme</a>
  * @since 1.0.0
  */
 @Configuration
@@ -126,7 +125,7 @@ public class SecurityConfig {
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
 
-        // ── Security headers (NIST SC-8/SC-18, SOG-IS, SOC 2 CC6.6) ─────
+        // ── Security headers (NIST SC-8/SC-18, SOC 2 CC6.6) ─────
         SecurityHeaders.apply(http);
 
         http

@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Spring Boot integration test verifying the Jackson ObjectMapper bean
- * is correctly configured with NIST/SOG-IS/SOC 2 hardening.
+ * is correctly configured with NIST/SOC 2 hardening.
  *
  * <p>Uses {@link ApplicationContextRunner} — the Spring Boot recommended pattern
  * for testing {@code @Configuration} classes in isolation. This avoids

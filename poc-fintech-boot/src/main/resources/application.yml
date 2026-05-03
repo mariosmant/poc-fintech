@@ -1,6 +1,6 @@
 # ============================================================================
 # POC Fintech — Application Configuration
-# Spring Boot 4.0.5 | Java 25 | Jackson 3.x (tools.jackson) | NIST/SOG-IS/SOC 2 hardened
+# Spring Boot 4.0.5 | Java 25 | Jackson 3.x (tools.jackson) | NIST/SOC 2 hardened
 # Keycloak OAuth2 | MDC Logging | Audit | Kafka DLQ | Rate Limiting
 # ============================================================================
 

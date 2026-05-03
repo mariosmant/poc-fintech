@@ -1,4 +1,3 @@
-### JWT Ultra-Validation
 # POC Fintech
 
 > Production-grade fintech Proof of Concept — Java 25, Spring Boot 4.0.5, Jackson 3.x (tools.jackson), React 19 + TypeScript, PostgreSQL, Kafka, Keycloak OAuth2/OIDC
@@ -9,19 +8,19 @@
 ┌─────────────────────────────────────────────────────────────┐
 │  Frontend (React 19 + TypeScript + Vite + TailwindCSS)      │
 │  (Dashboard, Accounts, Transfers, Ledger, React Query)      │
-│  (Keycloak JS OIDC auth, PKCE, protected routes)           │
+│  (Keycloak JS OIDC auth, PKCE, protected routes)            │
 ├─────────────────────────────────────────────────────────────┤
-│                     Boot Module                              │
+│                     Boot Module                             │
 │  (Spring Boot entry point, config, Docker, tests)           │
 ├─────────────────────────────────────────────────────────────┤
-│                Infrastructure Module                         │
+│                Infrastructure Module                        │
 │  (Spring adapters: JPA, Kafka, REST, Security, Observ.)     │
 │  (OAuth2 Resource Server, Audit AOP, MDC Logging, DLQ)      │
 ├─────────────────────────────────────────────────────────────┤
-│                Application Module                            │
+│                Application Module                           │
 │  (CQRS handlers, Saga Orchestrator, Use Cases, DTOs)        │
 ├─────────────────────────────────────────────────────────────┤
-│                  Domain Module                               │
+│                  Domain Module                              │
 │  (Aggregates, Value Objects, Events, Ports — pure Java)     │
 └─────────────────────────────────────────────────────────────┘
         ↕                   ↕                    ↕
@@ -91,8 +90,8 @@
 ┌──────────┐    PKCE/OIDC     ┌──────────┐     JWT Bearer     ┌──────────┐
 │  React   │ ◄──────────────► │ Keycloak │                    │  Spring  │
 │ Frontend │                  │   IdP    │                    │  Boot    │
-│          │ ────────────────────────────────────────────────► │ Resource │
-│          │   fetch + Bearer token                           │  Server  │
+│          │ ───────────────────────────────────────────────► │ Resource │
+│          │   fetch + Bearer token      |                    │  Server  │
 └──────────┘                  └──────────┘                    └──────────┘
                                                                    │
                                                           JWT validated via

@@ -11,7 +11,7 @@ import java.util.HexFormat;
  * <p>SHA3-256 is chosen for:
  * <ul>
  *   <li><b>NIST FIPS 202</b> compliance</li>
- *   <li><b>SOGIS/SOC</b> alignment — approved for use until 2030+</li>
+ *   <li><b>SOC</b> alignment — approved for use until 2030+</li>
  *   <li>Collision resistance: 128-bit security level (birthday bound)</li>
  *   <li>No length-extension attacks (unlike SHA-2)</li>
  * </ul></p>

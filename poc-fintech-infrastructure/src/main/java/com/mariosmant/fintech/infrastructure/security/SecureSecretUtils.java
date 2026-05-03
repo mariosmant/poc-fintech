@@ -12,7 +12,7 @@ import java.util.Arrays;
 import java.util.HexFormat;
 
 /**
- * Cryptographically safe secret handling utility (NIST SP 800-132, SOG-IS).
+ * Cryptographically safe secret handling utility (NIST SP 800-132).
  *
  * <p><b>Key principles:</b></p>
  * <ul>

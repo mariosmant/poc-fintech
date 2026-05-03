@@ -40,7 +40,7 @@ import java.util.Map;
  *
  * <h2>Memory hygiene</h2>
  * <p>Every key is held as a {@code byte[]} so {@link #close()} can zeroise
- * each entry on shutdown (NIST SP 800-88, SOG-IS memory-hygiene guidance).
+ * each entry on shutdown (NIST SP 800-88 memory-hygiene guidance).
  * The {@link Mac} instance is re-initialised per call (it is not thread-safe).</p>
  *
  * @author mariosmant

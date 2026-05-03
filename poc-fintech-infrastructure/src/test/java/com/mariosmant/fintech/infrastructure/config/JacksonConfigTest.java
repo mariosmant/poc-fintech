@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Unit tests for {@link JacksonConfig} — verifies NIST/SOG-IS/SOC 2 hardening.
+ * Unit tests for {@link JacksonConfig} — verifies NIST/SOC 2 hardening.
  *
  * <p>Uses Jackson 3.x ({@code tools.jackson}) exception types:
  * {@link JacksonException} replaces {@code JsonProcessingException},

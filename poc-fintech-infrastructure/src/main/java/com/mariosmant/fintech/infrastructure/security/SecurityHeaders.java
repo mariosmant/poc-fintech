@@ -11,7 +11,7 @@ import org.springframework.security.web.header.writers.XXssProtectionHeaderWrite
  * Shared response-header configuration for all filter chains
  * (Resource-Server and OAuth2-Login BFF).
  *
- * <p>Keeping this in one place guarantees that the NIST SC-8/SC-18, SOG-IS, and
+ * <p>Keeping this in one place guarantees that the NIST SC-8/SC-18, and
  * SOC 2 CC6.6 header controls stay identical regardless of which authentication
  * model is active — an auditor reading either filter chain sees the same hardened
  * surface.</p>

@@ -3,8 +3,8 @@
 > **Status:** Proof of Concept. This repository is **not** production-ready
 > and must not be used to handle real money, real PII, or real credentials.
 > It is an architectural showcase aligned with — but not certified against —
-> NIST SP 800-53 Rev 5, SOG-IS Crypto Evaluation Scheme, SOC 2 Type II, and
-> OWASP ASVS L2. Any language like "NIST/SOG-IS hardened" in this repo means
+> NIST SP 800-53 Rev 5, SOC 2 Type II, and
+> OWASP ASVS L2. Any language like "NIST hardened" in this repo means
 > "applies controls drawn from those frameworks", not formal attestation.
 
 ## Reporting a Vulnerability
@@ -280,8 +280,6 @@ The controls above are designed to support and draw from:
 * **NIST SP 800-53 Rev 5** — AC-*, AU-*, IA-*, SC-8, SC-18, SC-28, SI-10.
 * **NIST SP 800-63B** — AAL2 session binding; HttpOnly cookie as authenticator
   assertion (§7.1), no long-lived bearer credentials in browser storage (§5.2.10).
-* **SOG-IS Agreed Cryptographic Mechanisms v1.3** — TLS 1.2+ with AES-GCM or
-  ChaCha20-Poly1305; RS256 / PS256 for JWS (§§2.3, 5.2).
 * **SOC 2 Type II Trust Services Criteria** —
   CC6.1 (logical access: `__Host-` cookie + SameSite=Strict + method security),
   CC6.6 (transmission: HSTS + TLS + Secure cookie),
@@ -299,7 +297,7 @@ The controls above are designed to support and draw from:
   |---|---|
   | **2.2.1** Secure configuration standards | `SecurityConfig` + `BffSecurityConfig` hardened headers (CSP, HSTS, COOP/COEP/CORP, Permissions-Policy) |
   | **3.3** Protect sensitive account data when displayed | `IbanMasking` util (`poc-fintech-domain/.../util/IbanMasking.java`) — used in logs / UI |
-  | **4.2.1** Strong cryptography on open networks | HSTS preload 1 y, `Secure` cookies, TLS 1.3 ciphers (SOG-IS subset) |
+  | **4.2.1** Strong cryptography on open networks | HSTS preload 1 y, `Secure` cookies, TLS 1.3 ciphers |
   | **6.2.4** Common coding vulnerabilities | Bean Validation, Jackson 3 strict deserialisation, CSRF double-submit (BFF) |
   | **6.3.1 / 6.3.3** Vulnerability identification & remediation | `mvn -Ppci-scan verify` → OWASP Dependency-Check fails build on CVSS ≥ 7.0 |
   | **6.4.2** Public-facing web-app protection | JWT ultra-validation (issuer, aud, azp, algs, required claims) |

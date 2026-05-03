@@ -10,7 +10,7 @@ export function DashboardPage() {
         <StatCard label="Architecture" value="Hexagonal" icon="🏛️" colour="primary" />
         <StatCard label="Patterns" value="CQRS + Saga" icon="🔄" colour="success" />
         <StatCard label="Messaging" value="Kafka Outbox" icon="📨" colour="warning" />
-        <StatCard label="Security" value="NIST/SOGIS" icon="🔒" colour="danger" />
+        <StatCard label="Security" value="NIST" icon="🔒" colour="danger" />
       </div>
 
       {/* Architecture diagram */}
