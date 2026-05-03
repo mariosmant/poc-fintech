@@ -1,6 +1,31 @@
 # POC Fintech
 
-> Production-grade fintech Proof of Concept — Java 25, Spring Boot 4.0.5, Jackson 3.x (tools.jackson), React 19 + TypeScript, PostgreSQL, Kafka, Keycloak OAuth2/OIDC
+> A reference-quality, security-hardened fintech back-end + SPA showcasing the
+> patterns I'd reach for on a real money-movement system: Hexagonal/DDD/CQRS,
+> Saga + Transactional Outbox, double-entry ledger, OAuth2 (Resource-Server **or**
+> BFF), tamper-evident audit log, and supply-chain hardening — all on the latest
+> Java 25 / Spring Boot 4.0 / React 19 stack.
+
+**Stack:** Java 25 · Spring Boot 4.0.5 · Spring Framework 7 · Jackson 3.x
+(`tools.jackson`) · React 19 + TypeScript 5.7 · PostgreSQL 18 · Apache Kafka
+(KRaft) · Keycloak (OIDC/OAuth2) · OpenTelemetry · Prometheus · Grafana.
+
+## Highlights for reviewers
+
+If you only have five minutes, look here:
+
+| What | Where |
+| --- | --- |
+| **Saga orchestration with compensation** — debit → fraud → FX → credit, rollback on credit failure | [`TransferSagaOrchestrator`](poc-fintech-application/src/main/java/com/mariosmant/fintech/application/saga/TransferSagaOrchestrator.java) |
+| **Transactional outbox + idempotent consumer** — exactly-once over Kafka | [`OutboxPollingPublisher`](poc-fintech-infrastructure/src/main/java/com/mariosmant/fintech/infrastructure/messaging/publisher/OutboxPollingPublisher.java), [`TransferSagaEventConsumer`](poc-fintech-infrastructure/src/main/java/com/mariosmant/fintech/infrastructure/messaging/consumer/TransferSagaEventConsumer.java) |
+| **Hexagonal boundaries enforced by ArchUnit** — fitness functions block adapter leakage into filters | [`HexagonalArchitectureTest`](poc-fintech-boot/src/test/java/com/mariosmant/fintech/arch/HexagonalArchitectureTest.java) |
+| **Tamper-evident audit log** — per-row HMAC-SHA256 chain + key rotation + `/actuator/auditchain` verifier | [`AuditChainWriter`](poc-fintech-infrastructure/src/main/java/com/mariosmant/fintech/infrastructure/security/audit/AuditChainWriter.java), [`AuditChainVerifier`](poc-fintech-infrastructure/src/main/java/com/mariosmant/fintech/infrastructure/security/audit/AuditChainVerifier.java) |
+| **Ultra-strict JWT validation** — alg pinning, audience, azp, typ, required claims, bounded skew | [`JwtValidators`](poc-fintech-infrastructure/src/main/java/com/mariosmant/fintech/infrastructure/security/JwtValidators.java) |
+| **Two auth topologies** — OAuth2 Resource Server (SPA-held Bearer) **or** BFF (server-held tokens, `__Host-SESSION` cookie, double-submit CSRF) | [`SecurityConfig`](poc-fintech-infrastructure/src/main/java/com/mariosmant/fintech/infrastructure/security/SecurityConfig.java), [`BffSecurityConfig`](poc-fintech-infrastructure/src/main/java/com/mariosmant/fintech/infrastructure/security/BffSecurityConfig.java), [`bffClient.ts`](poc-fintech-frontend/src/api/bffClient.ts) |
+| **Rate limiting with circuit-breaker fallback** — Bucket4j+Redis distributed; Caffeine in-process; tenant-aware keys; IETF `RateLimit-*` headers | [`security/ratelimit/`](poc-fintech-infrastructure/src/main/java/com/mariosmant/fintech/infrastructure/security/ratelimit/) |
+| **IP-reputation pre-filter** — Spamhaus DROP/EDROP refresher, fail-static snapshot | [`security/reputation/`](poc-fintech-infrastructure/src/main/java/com/mariosmant/fintech/infrastructure/security/reputation/) |
+| **Hardened distroless image** — UID 65532, no shell; two variants via `docker buildx bake` | [`Dockerfile`](Dockerfile), [`docker-bake.hcl`](docker-bake.hcl) |
+| **Standards mapping** — PCI DSS v4.0.1, NIST SP 800-53, OWASP ASVS, SOC 2 | [`SECURITY.md`](SECURITY.md) |
 
 ## Architecture
 
@@ -26,6 +51,9 @@
         ↕                   ↕                    ↕
    Keycloak            PostgreSQL              Kafka
    (OAuth2/OIDC)       (+ Flyway)          (KRaft mode)
+                            ↕                    ↕
+                        Redis (opt.)        OTel Collector
+                  (BFF session / rate-limit) (traces → Prom)
 ```
 
 ## What This POC Demonstrates
@@ -55,57 +83,137 @@
 | **Multi-Tenant Rate-Limit Keys** | `TenantResolver` port + `JwtClaimTenantResolver` (JWT `tenant_id → tid → azp` lookup chain); rate-limit keys namespaced as `tenant:<id>:user:<sub>` |
 | **IP-Reputation Pre-Filter** | `BlockedIpFilter` + `IpReputationService` port with Spamhaus DROP / EDROP feed refresher; CIDR snapshot is fail-static; 403 + RFC 7807 `urn:fintech:error:blocked-by-reputation` |
 | **Retention / Data Minimisation** | `OutboxShedder` scheduled sweep deletes published outbox rows older than `app.outbox.shedding.retention` (NIST SI-12, GDPR Art. 5(1)(e)) |
-| **Supply Chain & Container** | Distroless multi-stage Dockerfile (UID 65532, no shell) |
-| **Observability** | Micrometer + Prometheus + Grafana + OpenTelemetry tracing |
+| **Supply Chain & Container** | Distroless multi-stage Dockerfile (UID 65532, no shell); two variants baked at build time (`resource-server` default, `bff`); `docker buildx bake` target ships both |
+| **BFF Topology (optional)** | `bff` Spring profile + Spring Session + OAuth2 Login. SPA holds no token — only an HttpOnly `__Host-SESSION` cookie. `BffController` exposes `/bff/user`, `/bff/logout`, `/bff/public/csrf`. Frontend `bffClient.ts` does same-origin fetch + double-submit `X-XSRF-TOKEN`. |
+| **Observability** | Micrometer + Prometheus + Grafana + OpenTelemetry (OTLP HTTP → otel-collector with tail-based sampling → Prometheus) |
 | **OpenAPI** | Springdoc auto-generated Swagger UI with JWT security scheme |
 
 ## Tech Stack
 
-| Technology | Version |
-|---|---|
-| Java | 25 |
-| Spring Boot | 4.0.5 |
-| Spring Framework | 7.0.6 |
-| Jackson | 3.x (tools.jackson) |
-| Keycloak | Latest (OIDC/OAuth2 IdP) |
-| React | 19 + TypeScript 5.7 |
-| Vite | 6 |
-| TailwindCSS | 3.4 |
-| React Query | 5 (TanStack) |
-| keycloak-js | Latest |
-| PostgreSQL | 18 |
-| Apache Kafka | Latest (KRaft, no Confluent) |
-| Kafka UI | Latest |
-| Flyway | 11.14 |
-| Resilience4j | 2.3.0 |
-| Testcontainers | 2.x |
-| Micrometer + Prometheus | Metrics |
-| Grafana | Dashboards |
-| Springdoc OpenAPI | 2.8.6 |
-| Vitest | 2.1 (frontend tests) |
+Versions explicitly pinned in [`pom.xml`](pom.xml) / [`poc-fintech-frontend/package.json`](poc-fintech-frontend/package.json) are listed exactly; everything else inherits from the Spring Boot 4.0.5 BOM.
+
+| Technology | Version | Source |
+|---|---|---|
+| Java | 25 | `pom.xml` (`java.version`) |
+| Spring Boot | 4.0.5 | parent POM |
+| Spring Framework | 7.x | managed by Spring Boot 4.0 BOM |
+| Jackson | 3.x (`tools.jackson`) | managed by Spring Boot 4.0 BOM |
+| Resilience4j | 2.3.0 | `pom.xml` (`resilience4j.version`) |
+| Springdoc OpenAPI | 2.8.6 | `pom.xml` (`springdoc.version`) |
+| Bucket4j (jdk17 core / redis-common / lettuce) | 8.18.0 | `pom.xml` (`bucket4j.version`) |
+| OWASP Dependency-Check | 12.1.0 | `pci-scan` profile |
+| Flyway | managed by Spring Boot BOM | `application.yml` |
+| Testcontainers | managed by Spring Boot BOM | test scope |
+| PostgreSQL | 18-alpine | `docker-compose.yml` |
+| Apache Kafka | latest (KRaft, no Confluent, no ZooKeeper) | `docker-compose.yml` |
+| Keycloak | latest | `docker-compose.yml` (`quay.io/keycloak/keycloak`) |
+| OpenTelemetry Collector (contrib) | 0.111.0 | `docker-compose.yml` |
+| Kafka UI (provectuslabs) | latest | `docker-compose.yml` |
+| Prometheus / Grafana | latest | `docker-compose.yml` |
+| React + TypeScript | 19 + ~5.7 | `package.json` |
+| Vite | ^6.0 | `package.json` |
+| TailwindCSS | ^3.4 | `package.json` |
+| @tanstack/react-query | ^5.62 | `package.json` |
+| keycloak-js | ^26.2.3 | `package.json` |
+| react-router-dom | ^7.1 | `package.json` |
+| Vitest | ^2.1.8 | `package.json` |
 
 ## Security Architecture
 
-```
+The backend ships with **two interchangeable auth topologies** baked at build
+time (see [`Dockerfile`](Dockerfile) `APP_VARIANT` arg). Pick the one that
+matches your threat model — both share the same hardened response headers,
+audit log, rate limiter, and method security; only the credential-handling
+layer differs.
+
+### Variant A — OAuth2 Resource Server (default, SPA-held Bearer)
+
+```text
 ┌──────────┐    PKCE/OIDC     ┌──────────┐     JWT Bearer     ┌──────────┐
 │  React   │ ◄──────────────► │ Keycloak │                    │  Spring  │
 │ Frontend │                  │   IdP    │                    │  Boot    │
 │          │ ───────────────────────────────────────────────► │ Resource │
-│          │   fetch + Bearer token      |                    │  Server  │
+│          │   fetch + Authorization: Bearer <jwt>            │  Server  │
 └──────────┘                  └──────────┘                    └──────────┘
                                                                    │
                                                           JWT validated via
                                                           JWK Set endpoint
+                                                          + JwtValidators chain
 ```
 
-- **No public API endpoints** — all `/api/**` routes require valid JWT
-- **User ID from JWT only** — account/transfer ownership never from client input
-- **PKCE (S256)** — prevents authorization code interception
-- **Brute force protection** — Keycloak lockout after 5 failed attempts
-- **Rate limiting** — per-user 100 req/min with 429 + Retry-After
-- **Audit trail** — all critical actions logged to `audit_log` table
-- **Secrets as byte[]/char[]** — never as String (prevents heap/intern leakage)
-- **Constant-time comparison** — prevents timing attacks on HMAC/signatures
+- **Keycloak client**: `poc-fintech-bff` (public, PKCE S256).
+- **Token storage**: in-memory only — `keycloak-js` keeps the access/refresh
+  token in JS heap; **never** `localStorage` / `sessionStorage`.
+- **Token refresh**: `keycloak.updateToken(30)` every 30 s
+  ([`AuthProvider.tsx`](poc-fintech-frontend/src/auth/AuthProvider.tsx)).
+- **Backend session**: `STATELESS` — no `JSESSIONID`, no server-side state.
+- **CSRF**: not needed — Bearer tokens are not ambient credentials and
+  `Authorization` cannot be forged from a cross-site context.
+- **`@PreAuthorize("hasRole('USER')")`** class-level on every `/api/**` controller.
+- **Filter chain**: [`SecurityConfig`](poc-fintech-infrastructure/src/main/java/com/mariosmant/fintech/infrastructure/security/SecurityConfig.java) (active when `bff` profile is **off**).
+
+### Variant B — BFF (server-held tokens, `__Host-` cookies)
+
+```text
+┌──────────┐  same-origin fetch  ┌──────────┐   Auth Code+PKCE   ┌──────────┐
+│  React   │ ─ __Host-SESSION ─► │  Spring  │ ◄────────────────► │ Keycloak │
+│ Frontend │     X-XSRF-TOKEN    │  Boot    │   (server-side)    │   IdP    │
+│ (no JWT) │ ◄─── 204 / JSON ─── │ OAuth2   │                    │          │
+└──────────┘                     │  Client  │                    └──────────┘
+                                 └──────────┘
+                                     │
+                        tokens kept in HTTP session
+                        (Spring Session over Redis,
+                          optional, for horizontal scale)
+```
+
+- **Keycloak client**: `poc-fintech-bff-server` (confidential, PKCE S256,
+  `client_secret_post`). Override the dev secret via
+  `KEYCLOAK_BFF_CLIENT_SECRET`.
+- **Activation**: `SPRING_PROFILES_ACTIVE=bff` (or
+  `--build-arg SPRING_PROFILES_ACTIVE=bff` baked into the image).
+- **Token storage**: server-side `HttpSession` only — the access and refresh
+  tokens **never reach the browser**. Mitigates XSS token theft
+  (NIST SP 800-63B §5.2.10, IETF `draft-ietf-oauth-browser-based-apps`).
+- **Browser credential**: `__Host-SESSION` cookie —
+  `HttpOnly` + `Secure` + `SameSite=Strict` + `Path=/` + no `Domain`.
+  The `__Host-` prefix is enforced by the browser (RFC 6265bis §4.1.3.2).
+- **Idle timeout**: 15 min (`server.servlet.session.timeout`) — PCI DSS §8.2.8.
+- **CSRF**: mandatory — double-submit `__Host-XSRF-TOKEN` cookie; SPA echoes it
+  in `X-XSRF-TOKEN` on every mutating request
+  ([`bffClient.ts`](poc-fintech-frontend/src/api/bffClient.ts) sets
+  `credentials: 'same-origin'`, `mode: 'same-origin'`, `redirect: 'manual'`).
+- **BFF endpoints**:
+  - `GET /bff/user` — non-sensitive identity projection (subject, username, roles, admin flag).
+  - `POST /bff/logout` — invalidates session, clears `__Host-SESSION` + `__Host-XSRF-TOKEN`,
+    triggers RP-initiated logout at Keycloak.
+  - `GET /bff/public/csrf` — bootstraps the CSRF cookie on first SPA load.
+- **401 handling**: BFF returns HTTP 401 JSON instead of a 302 (browsers cannot
+  follow cross-origin auth redirects from `fetch`); SPA performs a top-level
+  navigation to `/oauth2/authorization/keycloak`.
+- **Distributed sessions**: `BFF_SESSION_STORE=redis` activates Spring Session
+  over Redis ([`BffRedisSessionConfig`](poc-fintech-infrastructure/src/main/java/com/mariosmant/fintech/infrastructure/security/BffRedisSessionConfig.java))
+  for horizontal scale and zero-downtime rolling restarts.
+- **Filter chain**: [`BffSecurityConfig`](poc-fintech-infrastructure/src/main/java/com/mariosmant/fintech/infrastructure/security/BffSecurityConfig.java) (active when `bff` profile is **on**).
+
+### Controls shared by both variants
+
+- **No public API endpoints** — every `/api/**` route is `@PreAuthorize("hasRole('USER')")` (class-level on each controller).
+- **User ID derived from the IdP** — owner of accounts / initiator of transfers is never accepted from the request body (NIST IA-2, OWASP IDOR).
+- **PKCE (S256)** — prevents authorization-code interception in both flows.
+- **Ultra-strict JWT validation** — alg pinning (`RS256`,`PS256`), issuer, audience, `azp`, `typ`, required claims, bounded clock skew (see [`JwtValidators`](poc-fintech-infrastructure/src/main/java/com/mariosmant/fintech/infrastructure/security/JwtValidators.java)).
+- **Hardened response headers** — HSTS, strict CSP, COOP/COEP/CORP, Permissions-Policy (26 features denied), centralised in [`SecurityHeaders`](poc-fintech-infrastructure/src/main/java/com/mariosmant/fintech/infrastructure/security/SecurityHeaders.java) so both filter chains apply the same set.
+- **Brute-force protection** — Keycloak realm: lockout after 5 failures, exponential back-off; password policy `length(12) + upperCase + lowerCase + digits + specialChars + notUsername + history(3)`.
+- **Per-route rate limiting** — `transfers` 20/min, `accounts` 60/min, default 100/min — IETF `RateLimit-*` headers + RFC 7807 429 body.
+- **IP-reputation pre-filter** — runs **before** the rate limiter (Spamhaus DROP / EDROP, fail-static).
+- **Tamper-evident audit log** — DB triggers reject UPDATE/DELETE/TRUNCATE (V9), per-row HMAC-SHA256 chain (V10), key rotation (V11); `/actuator/auditchain` is `hasRole('ADMIN')`.
+- **MDC correlation** — `requestId`, `traceId`, `spanId`, `userId`, `username` on every log line; sanitised against log-injection.
+- **Secrets as `byte[]`/`char[]`** — never `String` (prevents heap/intern leakage).
+- **Constant-time comparison** — `MessageDigest.isEqual` for HMAC / signatures.
+
+> Full threat model, standards mapping (PCI DSS v4.0.1, NIST SP 800-53 / 800-63B,
+> SOC 2, OWASP ASVS / Top 10), and known limitations live in
+> [`SECURITY.md`](SECURITY.md).
 
 ## Quick Start
 
@@ -118,9 +226,14 @@ docker compose up -d
 
 Wait for Keycloak to be healthy (~30s). The `fintech` realm is auto-imported with:
 
-- **Users**: `alice` / `Alice123!@#$`, `bob` / `Bob123!@#$xx`, `admin` / `Admin123!@#$`
-- **Client**: `poc-fintech-bff` (public, PKCE)
-- **Keycloak Admin**: http://localhost:8180 (`admin`/`admin`)
+- **Users**: `alice` (role `user`), `bob` (role `user`), `admin` (roles `user` + `admin`).
+  Passwords: `Alice123!@#$`, `Bob123!@#$xx`, `Admin123!@#$`
+- **Realm policy**: brute-force protection (lockout after 5 failures), `length(12) and upperCase(1) and lowerCase(1) and digits(1) and specialChars(1) and notUsername and passwordHistory(3)`
+- **Clients**:
+  - `poc-fintech-bff` — **public**, PKCE (S256). Used by the SPA in the default Resource-Server flow.
+  - `poc-fintech-bff-server` — **confidential**, used by the backend in the `bff` profile (Authorization Code + PKCE, server-held tokens).
+- **Audience mapping**: `audience` client-scope emits `aud=poc-fintech-api` so JwtValidators can enforce it.
+- **Keycloak Admin**: <http://localhost:8180> (`admin`/`admin`)
 
 ### 2. Build & Run Backend
 
@@ -225,8 +338,9 @@ curl -X POST http://localhost:8080/api/v1/transfers \
 - **Swagger UI**: <http://localhost:8080/swagger-ui.html>
 - **Kafka UI**: <http://localhost:8081>
 - **Prometheus**: <http://localhost:9090>
-- **Grafana**: <http://localhost:3000> (admin/admin)
-- **Actuator**: <http://localhost:8080/actuator/health>
+- **Grafana**: <http://localhost:3000> (admin/admin) — pre-provisioned `poc-fintech` dashboard
+- **OTel Collector**: OTLP gRPC `:4317`, OTLP HTTP `:4318`, Prom exposition `:8889`
+- **Actuator**: <http://localhost:8080/actuator/health>, `/actuator/prometheus`, `/actuator/info`, `/actuator/auditchain`
 
 ### 6. Run Tests
 
@@ -279,57 +393,95 @@ docker inspect poc-fintech:bff --format '{{range .Config.Env}}{{println .}}{{end
 
 ```text
 poc-fintech/
-├── poc-fintech-boot/                   # Spring Boot entry point + config
 ├── poc-fintech-domain/                 # Pure domain (no framework deps)
 │   └── src/main/java/.../domain/
-│       ├── model/                      # Aggregates, value objects
-│       ├── event/                      # Domain events
-│       └── port/outbound/              # Port interfaces (repositories, services)
+│       ├── model/                      # Aggregates (Account, Transfer, LedgerEntry)
+│       │   └── vo/                     # Value objects (Money, AccountId, Currency, IdempotencyKey, …)
+│       ├── event/                      # Domain events (TransferInitiated/Completed/Failed, …)
+│       ├── exception/                  # DuplicateTransferException, InsufficientFundsException, …
+│       ├── port/outbound/              # Port interfaces (repos, FraudDetectionPort, FxRatePort, EventPublisher)
+│       └── util/                       # IbanUtil (ISO 13616 MOD-97), IbanMasking (PCI 3.3)
 ├── poc-fintech-application/            # Application layer (no Spring)
 │   └── src/main/java/.../application/
-│       ├── command/                    # CQRS commands (with userId/initiatedBy)
+│       ├── command/                    # CQRS commands (with userId/initiatedBy from JWT)
 │       ├── dto/                        # Response DTOs (read models)
-│       ├── usecase/                    # Use case handlers
-│       ├── saga/                       # Saga orchestrator
-│       └── outbox/                     # Outbox event model
-├── poc-fintech-infrastructure/         # Spring adapters
-│   ├── src/main/java/.../infrastructure/
-│   │   ├── persistence/                # JPA entities, mappers, repos, adapters
-│   │   ├── messaging/                  # Kafka config, outbox publisher, DLQ consumer
-│   │   │   ├── config/                 # KafkaConfig (DLQ + retry + circuit breaker)
-│   │   │   ├── consumer/               # TransferSagaEventConsumer, DeadLetterQueueConsumer
-│   │   │   ├── dlq/                    # DeadLetterEntity, DeadLetterRepository
-│   │   │   └── publisher/              # OutboxPollingPublisher
-│   │   ├── web/                        # REST controllers, exception handler
-│   │   ├── fraud/                      # Fraud detection adapter
-│   │   ├── fx/                         # FX rate adapter
-│   │   └── security/                   # SecurityConfig (OAuth2), MDC filter, rate limiting
-│   │       ├── audit/                  # @Audited annotation, AuditAspect, AuditLogEntity
-│   │       ├── HashingUtil.java        # SHA3-256 (NIST FIPS 202)
-│   │       └── SecureSecretUtils.java  # HMAC, byte[]/char[] secret handling, CSPRNG
+│       ├── usecase/                    # AccountUseCase, InitiateTransferUseCase, *QueryUseCase
+│       ├── saga/                       # TransferSagaOrchestrator + OrphanedSagaEventException
+│       ├── serialization/              # EventPayloadSerializer (outbox payload encoding)
+│       ├── outbox/                     # OutboxEvent model
+│       └── port/                       # OutboxRepository
+├── poc-fintech-infrastructure/         # Spring adapters (Java only — no resources)
+│   └── src/main/java/.../infrastructure/
+│       ├── config/                     # BeanConfig, CorsConfig, JacksonConfig (Jackson 3 strict), JpaAuditingConfig
+│       ├── persistence/
+│       │   ├── adapter/                # Jpa{Account,Transfer,Ledger,Outbox}RepositoryAdapter
+│       │   ├── entity/                 # *JpaEntity classes
+│       │   ├── mapper/                 # Domain ↔ JPA mappers
+│       │   ├── repository/             # SpringDataXxxRepository interfaces
+│       │   └── outbox/                 # OutboxShedder (NIST SI-12 retention sweep)
+│       ├── messaging/
+│       │   ├── config/                 # KafkaConfig (DLQ + retry + circuit breaker)
+│       │   ├── consumer/               # TransferSagaEventConsumer, DeadLetterQueueConsumer
+│       │   ├── dlq/                    # DeadLetterEntity, DeadLetterRepository
+│       │   └── publisher/              # OutboxPollingPublisher (FOR UPDATE SKIP LOCKED)
+│       ├── observability/              # TransferMetrics (Micrometer)
+│       ├── web/
+│       │   ├── controller/             # AccountController, TransferController, LedgerController, BffController, RootController
+│       │   ├── dto/                    # Request DTOs with Bean Validation
+│       │   └── exception/              # GlobalExceptionHandler + ProblemDetails (RFC 7807)
+│       ├── fraud/                      # FraudDetectionAdapter (Resilience4j-wrapped)
+│       ├── fx/                         # FxRateAdapter (USD-triangulated)
+│       └── security/
+│           ├── SecurityConfig.java        # Resource-Server filter chain + headers
+│           ├── BffSecurityConfig.java     # OAuth2 Login + CSRF double-submit (`bff` profile)
+│           ├── BffRedisSessionConfig.java # Spring Session over Redis (BFF horizontal scale)
+│           ├── JwtDecoderConfig.java      # NimbusJwtDecoder + JwtValidators chain
+│           ├── JwtValidators.java         # alg pinning · iss · aud · azp · typ · skew
+│           ├── KeycloakJwtAuthoritiesConverter.java
+│           ├── SecurityHeaders.java       # CSP, COOP/COEP/CORP, Permissions-Policy
+│           ├── SecurityContextUtil.java
+│           ├── MdcLoggingFilter.java      # requestId/traceId/userId/username MDC
+│           ├── RateLimitFilter.java
+│           ├── HashingUtil.java           # SHA3-256 (NIST FIPS 202)
+│           ├── SecureSecretUtils.java     # HMAC, byte[]/char[] secrets, CSPRNG
+│           ├── audit/                  # @Audited, AuditAspect, AuditChain{Writer,Verifier,Hasher,KeyRing,Endpoint}
+│           ├── ratelimit/              # RateLimiter port + Caffeine/Bucket4jRedis adapters + CircuitBreakingRateLimiter
+│           ├── reputation/             # BlockedIpFilter + IpReputationService (Spamhaus DROP/EDROP refresher)
+│           └── tenant/                 # TenantResolver + JwtClaimTenantResolver
+├── poc-fintech-boot/                   # Spring Boot entry point + config + tests
+│   ├── src/main/java/.../              # FintechApplication, OpenApiConfig, StartupBannerListener
 │   ├── src/main/resources/
-│   │   ├── application.yml             # App config (OAuth2, Kafka, Resilience4j)
-│   │   └── db/migration/               # Flyway SQL migrations
-│   └── src/test/java/                  # Integration & E2E tests + Testcontainers
+│   │   ├── application.yml             # Profiles: default · bff · json (ECS structured logs)
+│   │   └── db/migration/               # Flyway V1–V11 SQL migrations
+│   └── src/test/                       # Unit, integration, E2E (Testcontainers), ArchUnit
+│       ├── java/.../arch/              # HexagonalArchitectureTest (fitness functions)
+│       ├── java/.../e2e/               # TransferE2ETest
+│       ├── java/.../integration/       # AuditChainIntegrationTest, TransferIntegrationTest
+│       ├── java/.../infrastructure/    # JacksonConfigIntegrationTest, BffControllerTest, BffSecurityConfigSmokeTest, SecurityHeadersIntegrationTest
+│       ├── java/.../testcontainers/    # TestcontainersConfig + EnabledIfDockerAvailable + TestSecurityConfig
+│       └── resources/application-test.yml
 ├── poc-fintech-frontend/               # React 19 + TypeScript + Vite
 │   ├── src/
-│   │   ├── auth/                       # Keycloak JS adapter + AuthProvider
-│   │   ├── api/                        # API client (typed fetch + Bearer token)
-│   │   ├── components/                 # UI components (layout with logout, StatusBadge)
-│   │   ├── features/                   # Feature pages (Dashboard, Accounts, Transfers, Ledger)
-│   │   ├── hooks/                      # React Query hooks (useApi)
-│   │   ├── types/                      # TypeScript API types
-│   │   └── utils/                      # Formatting, idempotency key generation
-│   ├── package.json
-│   └── vite.config.ts                  # Vite + Vitest + API/Keycloak proxy
-└── docker/                             # Docker Compose + observability
-    ├── docker-compose.yml              # Postgres, Kafka, Keycloak, Prometheus, Grafana
-    ├── keycloak/
-    │   └── fintech-realm.json          # Pre-configured realm, clients, users, roles
-    ├── prometheus/prometheus.yml
-    └── grafana/
-        ├── dashboards/                 # Pre-provisioned Grafana dashboard JSON
-        └── provisioning/               # Datasource + dashboard provisioning
+│   │   ├── auth/                       # Two providers: AuthProvider (keycloak-js) + BffAuthProvider (cookie session); loginGuard
+│   │   ├── api/                        # client.ts (Bearer token) + bffClient.ts (same-origin + double-submit CSRF)
+│   │   ├── components/
+│   │   │   ├── layout/                 # AppLayout (header, nav, logout)
+│   │   │   └── ui/                     # IbanDisplay (grouped + copy), StatusBadge, Feedback toast
+│   │   ├── features/                   # Dashboard, Accounts, Transfers, Ledger pages
+│   │   ├── hooks/                      # useApi (React Query)
+│   │   ├── types/                      # TypeScript API types incl. RFC 7807 ProblemDetail
+│   │   └── utils/                      # format.ts, iban.ts (client-side IBAN formatting)
+│   ├── package.json                    # `dev` / `dev:bff`, `test` (Vitest), `build` / `build:bff`
+│   └── vite.config.ts                  # Vite + dev proxy for /api, /bff, /oauth2, /login/oauth2, /logout, /realms
+├── docker/                             # Compose stack + observability
+│   ├── docker-compose.yml              # Postgres, Keycloak (+ own Postgres), Kafka (KRaft), Kafka UI, Prometheus, Grafana, OTel Collector
+│   ├── keycloak/fintech-realm.json     # Pre-configured realm, clients, scopes, users, roles, audience mapper
+│   ├── prometheus/prometheus.yml
+│   ├── grafana/                        # Pre-provisioned dashboard + datasource
+│   └── otel-collector/                 # OTLP receivers + tail-based sampling + Prom exporter
+├── Dockerfile                          # Multi-stage distroless (builder → layertools → gcr.io/distroless/java25)
+├── docker-bake.hcl                     # `bake resource-server` / `bake bff` — multi-arch, push-ready
+└── pom.xml                             # Parent POM; `pci-scan` profile = OWASP Dependency-Check
 ```
 
 ## Database Schema (Flyway Migrations)

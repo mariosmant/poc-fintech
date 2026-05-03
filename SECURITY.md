@@ -7,6 +7,21 @@
 > OWASP ASVS L2. Any language like "NIST hardened" in this repo means
 > "applies controls drawn from those frameworks", not formal attestation.
 
+## At a glance
+
+| Concern | Implementation | Pointer |
+| --- | --- | --- |
+| Token validation | Strict claim chain (alg pin · iss · aud · azp · typ · skew · required claims) | [`JwtValidators`](poc-fintech-infrastructure/src/main/java/com/mariosmant/fintech/infrastructure/security/JwtValidators.java) · [`JwtDecoderConfig`](poc-fintech-infrastructure/src/main/java/com/mariosmant/fintech/infrastructure/security/JwtDecoderConfig.java) |
+| Two auth topologies | Resource-Server (Bearer) **or** BFF (`__Host-SESSION` + double-submit CSRF) | [`SecurityConfig`](poc-fintech-infrastructure/src/main/java/com/mariosmant/fintech/infrastructure/security/SecurityConfig.java) · [`BffSecurityConfig`](poc-fintech-infrastructure/src/main/java/com/mariosmant/fintech/infrastructure/security/BffSecurityConfig.java) |
+| HTTP hardening | HSTS, strict CSP, COOP/COEP/CORP, Permissions-Policy (26 features denied) | [`SecurityHeaders`](poc-fintech-infrastructure/src/main/java/com/mariosmant/fintech/infrastructure/security/SecurityHeaders.java) |
+| Audit trail integrity | DB-level immutability triggers + per-row HMAC chain + key rotation + `/actuator/auditchain` (admin-only) | [`security/audit/`](poc-fintech-infrastructure/src/main/java/com/mariosmant/fintech/infrastructure/security/audit/) · Flyway V9–V11 |
+| Rate limiting | Per-route, tenant-aware keys, Caffeine **or** Bucket4j+Redis with Resilience4j circuit-breaker fallback | [`security/ratelimit/`](poc-fintech-infrastructure/src/main/java/com/mariosmant/fintech/infrastructure/security/ratelimit/) |
+| IP-reputation gate | Fail-static Spamhaus DROP/EDROP refresher; runs **before** rate limiter | [`security/reputation/`](poc-fintech-infrastructure/src/main/java/com/mariosmant/fintech/infrastructure/security/reputation/) |
+| Logging hygiene | Sanitised `X-Request-ID`, W3C trace context, MDC cleared in `finally`, ECS JSON profile | [`MdcLoggingFilter`](poc-fintech-infrastructure/src/main/java/com/mariosmant/fintech/infrastructure/security/MdcLoggingFilter.java) |
+| Container hardening | Distroless `gcr.io/distroless/java25-debian12:nonroot`, UID 65532, no shell, two variants via `docker buildx bake` | [`Dockerfile`](Dockerfile) · [`docker-bake.hcl`](docker-bake.hcl) |
+| Supply-chain scan | OWASP Dependency-Check, fails build on CVSS ≥ 7.0 | `mvn -Ppci-scan verify` |
+| Architectural fitness | ArchUnit blocks Bucket4j / Lettuce / Caffeine / programmatic Resilience4j leaking into filters | [`HexagonalArchitectureTest`](poc-fintech-boot/src/test/java/com/mariosmant/fintech/arch/HexagonalArchitectureTest.java) |
+
 ## Reporting a Vulnerability
 
 This is a personal learning / showcase repository without a dedicated security
@@ -100,8 +115,8 @@ All controlled via `SecurityConfig` (profile `!test`):
 | `Cross-Origin-Opener-Policy` | `same-origin` | Spectre / cross-window isolation |
 | `Cross-Origin-Embedder-Policy` | `require-corp` | Block resources without CORP opt-in |
 | `Cross-Origin-Resource-Policy` | `same-origin` | Prevent cross-origin resource reads |
-| `Content-Security-Policy` | `default-src 'self'`; strict `script-src 'self'` + `script-src-attr 'none'`; `object-src 'none'`; `connect-src 'self'`; `upgrade-insecure-requests` | XSS / data exfiltration |
-| `Permissions-Policy` | 24 browser features explicitly denied (camera, microphone, geolocation, payment, USB, HID, serial, WebAuthn create/get, screen-capture, …) | Feature-policy hardening |
+| `Content-Security-Policy` | `default-src 'self'`; `script-src 'self'`; `script-src-attr 'none'`; `style-src 'self' 'unsafe-inline'`; `img-src 'self' data:`; `font-src 'self'`; `connect-src 'self'`; `frame-ancestors 'none'`; `form-action 'self'`; `base-uri 'self'`; `object-src 'none'`; `upgrade-insecure-requests` | XSS / data exfiltration |
+| `Permissions-Policy` | 26 browser features explicitly denied (camera, microphone, geolocation, payment, USB, HID, serial, `publickey-credentials-create/get`, `display-capture`, …) | Feature-policy hardening |
 | `Cache-Control: no-store` | on sensitive API responses | Prevent cached financial data |
 | Sessions | `STATELESS` (default) / session-backed (`bff` profile) | No server-side session state unless in BFF mode |
 | CSRF | disabled by default; `__Host-XSRF-TOKEN` double-submit under `bff` profile | API is Bearer-authenticated by default |
@@ -137,7 +152,10 @@ cookie to the exact origin and blocks subdomain cookie-injection attacks.
   * No polymorphic default-typing.
   * ISO-8601 dates only — `write-dates-as-timestamps=false`.
 * **No raw SQL** — all persistence goes through Spring Data JPA / named queries.
-* **IBAN** validated by `IbanValidator` (ISO 13616 MOD-97).
+* **IBAN** — request-shape pattern enforced via `@Pattern` on
+  [`InitiateTransferRequest.targetIban`](poc-fintech-infrastructure/src/main/java/com/mariosmant/fintech/infrastructure/web/dto/InitiateTransferRequest.java);
+  ISO 13616 MOD-97 check digits validated by [`IbanUtil`](poc-fintech-domain/src/main/java/com/mariosmant/fintech/domain/util/IbanUtil.java)
+  in the domain layer. PCI 3.3 display masking by [`IbanMasking`](poc-fintech-domain/src/main/java/com/mariosmant/fintech/domain/util/IbanMasking.java).
 
 ## Logging & Correlation
 
@@ -246,13 +264,20 @@ Retention), GDPR Art. 5(1)(e) (storage limitation).
    (V11) and DB-trigger immutable (V9); silent forgery requires compromise
    of three independent surfaces (DB writer role, trigger drop privilege,
    AND every active HMAC key in the keyring).
-5. `/actuator/info` is publicly reachable; `info.*` is curated to be
-   non-sensitive, but production should gate it behind `ROLE_admin` or
-   network-level ACLs.
-6. Keycloak client `poc-fintech-bff` is `public`; for production a BFF
-   confidential client is preferred.
-7. CSP currently pins `connect-src` to `http://localhost:8180` — must be
-   templated per environment before any non-local deploy.
+5. `/actuator/info` and `/actuator/prometheus` are publicly reachable;
+   `info.*` is curated to be non-sensitive, but production should gate
+   both behind `ROLE_ADMIN` or network-level ACLs.
+   (`/actuator/auditchain` is already `hasRole("ADMIN")` in both
+   `SecurityConfig` and `BffSecurityConfig`.)
+6. The realm ships **two** Keycloak clients: `poc-fintech-bff` (public,
+   PKCE) for the Resource-Server flow and `poc-fintech-bff-server`
+   (confidential, used by the `bff` profile). The committed confidential
+   secret is a dev-only value (`poc-fintech-bff-dev-secret-change-me`) —
+   override `KEYCLOAK_BFF_CLIENT_SECRET` in any non-dev environment.
+7. The Keycloak realm's `webOrigins` and `redirectUris` are pinned to
+   `localhost:5173` / `localhost:8080`. Adapt `docker/keycloak/fintech-realm.json`
+   for any non-local deploy. (CSP `connect-src` is `'self'` — no environment-
+   specific URL is baked into the application's CSP.)
 8. The saga orchestrator performs compensation only on credit failure;
    partial failures after debit/credit but before outbox flush are recovered
    by the outbox poller on restart but are not yet observed by an
@@ -299,5 +324,6 @@ No formal certification is claimed or implied.
 
 ## See Also
 
-* [`README.md`](./README.md) — architecture overview, JWT validation table, method-security matrix.
-* `docker/keycloak/fintech-realm.json` — realm, clients, scopes, roles, audience mapper.
+* [`README.md`](./README.md) — architecture overview, recruiter highlights, project structure, quick-start.
+* [`docker/keycloak/fintech-realm.json`](docker/keycloak/fintech-realm.json) — realm, clients (`poc-fintech-bff` public + `poc-fintech-bff-server` confidential), scopes, roles, audience mapper, password & lockout policy.
+* [`Dockerfile`](Dockerfile) + [`docker-bake.hcl`](docker-bake.hcl) — distroless multi-stage build with two profile-baked variants.
