@@ -235,21 +235,6 @@ truth for at-least-once delivery. Gated by `app.outbox.shedding.enabled`.
 Standards mapping: NIST SP 800-53 SI-12 (Information Management &
 Retention), GDPR Art. 5(1)(e) (storage limitation).
 
-## Supply Chain & Container Hardening
-
-* **Distroless multi-stage Dockerfile** — `eclipse-temurin:25-jdk` builder
-  → `gcr.io/distroless/java25-debian12:nonroot` runtime (UID 65532, no
-  shell, no package manager, layered Spring Boot jar). Standards: NIST SP
-  800-190 §4.1/§4.2, CIS Docker Benchmark v1.6.
-* **CycloneDX 1.5 SBOM** — aggregate `target/bom.{json,xml}` published per
-  release. Standards: PCI DSS §6.3.2, EU CRA Annex I, NIST SSDF PS.3.2,
-  US EO 14028 §4(e).
-* **GitHub Actions CI** — six-job pipeline: `backend` (mvn verify),
-  `archunit`, `frontend` (vitest), `sca` (OWASP Dependency-Check —
-  fail on CVSS ≥ 7.0), `sbom`, `docker` (Trivy fail on HIGH/CRITICAL).
-* **Dependency-review action** on PRs blocks new HIGH/CRITICAL CVEs and
-  AGPL-licensed dependencies.
-
 ## Known Limitations / Non-Goals
 
 1. No mTLS between services.

@@ -31,7 +31,7 @@
 ## What This POC Demonstrates
 
 | Pattern / Practice | Implementation |
-|----|---|
+| --- | --- |
 | **Hexagonal Architecture** | Domain ports (interfaces) + Infrastructure adapters |
 | **DDD** | Aggregates (`Account`, `Transfer`), Value Objects (`Money`, `AccountId`), Domain Events |
 | **CQRS** | Command handlers (write) / Query handlers (read) split |
@@ -117,6 +117,7 @@ docker compose up -d
 ```
 
 Wait for Keycloak to be healthy (~30s). The `fintech` realm is auto-imported with:
+
 - **Users**: `alice` / `Alice123!@#$`, `bob` / `Bob123!@#$xx`, `admin` / `Admin123!@#$`
 - **Client**: `poc-fintech-bff` (public, PKCE)
 - **Keycloak Admin**: http://localhost:8180 (`admin`/`admin`)
@@ -130,7 +131,9 @@ mvn -pl poc-fintech-boot spring-boot:run
 
 #### Optional — BFF (server-held tokens, `__Host-` cookies)
 
-The default backend runs with OAuth2 Resource Server — SPA holds the Bearer
+The default backend runs as an OAuth2 Resource Server — the SPA holds the Bearer token. To run with the BFF variant (backend holds tokens in `__Host-` session cookies):
+
+```bash
 # `bff` profile alone is enough locally. Override KEYCLOAK_BFF_CLIENT_SECRET
 # (env var or -D system property) in non-dev environments.
 #
@@ -183,7 +186,13 @@ mvn -pl poc-fintech-boot spring-boot:run
 ```bash
 cd poc-fintech-frontend
 npm install
-mvn -pl poc-fintech-boot spring-boot:run -Dspring-boot.run.profiles=bff
+npm run dev
+```
+
+### 4. Test the API
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8180/realms/fintech/protocol/openid-connect/token \
   -d "client_id=poc-fintech-bff" \
   -d "username=alice" \
   -d "password=Alice123!@#$" \
@@ -211,13 +220,13 @@ curl -X POST http://localhost:8080/api/v1/transfers \
 
 ### 5. Observability
 
-- **Frontend**: http://localhost:5173
-- **Keycloak Admin**: http://localhost:8180 (admin/admin)
-- **Swagger UI**: http://localhost:8080/swagger-ui.html
-- **Kafka UI**: http://localhost:8081
-- **Prometheus**: http://localhost:9090
-- **Grafana**: http://localhost:3000 (admin/admin)
-- **Actuator**: http://localhost:8080/actuator/health
+- **Frontend**: <http://localhost:5173>
+- **Keycloak Admin**: <http://localhost:8180> (admin/admin)
+- **Swagger UI**: <http://localhost:8080/swagger-ui.html>
+- **Kafka UI**: <http://localhost:8081>
+- **Prometheus**: <http://localhost:9090>
+- **Grafana**: <http://localhost:3000> (admin/admin)
+- **Actuator**: <http://localhost:8080/actuator/health>
 
 ### 6. Run Tests
 
@@ -237,9 +246,7 @@ mvn -Ppci-scan verify
 
 ### 7. Build Container Image (two variants)
 
-The hardened distroless `Dockerfile` accepts a build-time
-`SPRING_PROFILES_ACTIVE` arg that is baked into the image — choose the auth
-flavour at build time without keeping two Dockerfiles in sync.
+The hardened distroless `Dockerfile` accepts a build-time `SPRING_PROFILES_ACTIVE` arg that is baked into the image — choose the auth flavour at build time without keeping two Dockerfiles in sync.
 
 ```bash
 # Variant A — OAuth2 Resource Server (SPA holds the Bearer token, default):
@@ -262,68 +269,73 @@ docker run --rm -p 8080:8080 \
   poc-fintech:bff
 ```
 
-Verify the variant from outside the image (no shell inside distroless):
+Verify the variant baked into the image (no shell inside distroless — inspect from the host):
 
 ```bash
-The default backend runs (OAuth2 Resource Server — SPA holds the Bearer
-token). To run (OAuth2 Login — the backend holds the token, browser
-| **Rate Limiting** | Per-user rate limiting with 429 Too Many Requests + Retry-After headers |
-│       └── port/outbound/           # Port interfaces (repositories, services)
-├── poc-fintech-application/         # Application layer (no Spring)
+docker inspect poc-fintech:bff --format '{{range .Config.Env}}{{println .}}{{end}}' | grep SPRING_PROFILES_ACTIVE
+```
+
+## Project Structure
+
+```text
+poc-fintech/
+├── poc-fintech-boot/                   # Spring Boot entry point + config
+├── poc-fintech-domain/                 # Pure domain (no framework deps)
+│   └── src/main/java/.../domain/
+│       ├── model/                      # Aggregates, value objects
+│       ├── event/                      # Domain events
+│       └── port/outbound/              # Port interfaces (repositories, services)
+├── poc-fintech-application/            # Application layer (no Spring)
 │   └── src/main/java/.../application/
-│       ├── command/                 # CQRS commands (with userId/initiatedBy)
-│       ├── dto/                     # Response DTOs (read models)
-│       ├── usecase/                 # Use case handlers
-│       ├── saga/                    # Saga orchestrator
-│       └── outbox/                  # Outbox event model
-├── poc-fintech-infrastructure/      # Spring adapters
-│   └── src/main/java/.../infrastructure/
-│       ├── persistence/             # JPA entities, mappers, repos, adapters
-│       ├── messaging/               # Kafka config, outbox publisher, DLQ consumer
-│       │   ├── config/              # KafkaConfig (DLQ + retry + circuit breaker)
-│       │   ├── consumer/            # TransferSagaEventConsumer, DeadLetterQueueConsumer
-│       │   ├── dlq/                 # DeadLetterEntity, DeadLetterRepository
-│       │   └── publisher/           # OutboxPollingPublisher
-│       ├── web/                     # REST controllers, exception handler
-│       ├── fraud/                   # Fraud detection adapter
-│       ├── fx/                      # FX rate adapter
-│       ├── security/                # SecurityConfig (OAuth2), MDC filter, rate limiting
-│       │   ├── audit/               # @Audited annotation, AuditAspect, AuditLogEntity
-│       │   ├── HashingUtil.java     # SHA3-256 (NIST FIPS 202)
-│       │   ├── SecureSecretUtils.java # HMAC, byte[]/char[] secret handling, CSPRNG
+│       ├── command/                    # CQRS commands (with userId/initiatedBy)
+│       ├── dto/                        # Response DTOs (read models)
+│       ├── usecase/                    # Use case handlers
+│       ├── saga/                       # Saga orchestrator
+│       └── outbox/                     # Outbox event model
+├── poc-fintech-infrastructure/         # Spring adapters
+│   ├── src/main/java/.../infrastructure/
+│   │   ├── persistence/                # JPA entities, mappers, repos, adapters
+│   │   ├── messaging/                  # Kafka config, outbox publisher, DLQ consumer
+│   │   │   ├── config/                 # KafkaConfig (DLQ + retry + circuit breaker)
+│   │   │   ├── consumer/               # TransferSagaEventConsumer, DeadLetterQueueConsumer
+│   │   │   ├── dlq/                    # DeadLetterEntity, DeadLetterRepository
+│   │   │   └── publisher/              # OutboxPollingPublisher
+│   │   ├── web/                        # REST controllers, exception handler
+│   │   ├── fraud/                      # Fraud detection adapter
+│   │   ├── fx/                         # FX rate adapter
+│   │   └── security/                   # SecurityConfig (OAuth2), MDC filter, rate limiting
+│   │       ├── audit/                  # @Audited annotation, AuditAspect, AuditLogEntity
+│   │       ├── HashingUtil.java        # SHA3-256 (NIST FIPS 202)
+│   │       └── SecureSecretUtils.java  # HMAC, byte[]/char[] secret handling, CSPRNG
 │   ├── src/main/resources/
-│   │   ├── application.yml          # App config (OAuth2, Kafka, Resilience4j)
-│   │   └── db/migration/            # Flyway SQL migrations (V1-V7)
-│   │       ├── V1-V4                # Core tables (accounts, transfers, ledger, outbox)
-│   │       ├── V5__create_audit_log.sql
-│   │       ├── V6__add_user_id_columns.sql
-│   │       └── V7__create_dead_letter_queue.sql
-│   └── src/test/java/               # Integration & E2E tests + Testcontainers
-├── poc-fintech-frontend/            # React 19 + TypeScript + Vite
+│   │   ├── application.yml             # App config (OAuth2, Kafka, Resilience4j)
+│   │   └── db/migration/               # Flyway SQL migrations
+│   └── src/test/java/                  # Integration & E2E tests + Testcontainers
+├── poc-fintech-frontend/               # React 19 + TypeScript + Vite
 │   ├── src/
-│   │   ├── auth/                    # Keycloak JS adapter + AuthProvider
-│   │   ├── api/                     # API client (typed fetch + Bearer token)
-│   │   ├── components/              # UI components (layout with logout, StatusBadge)
-│   │   ├── features/                # Feature pages (Dashboard, Accounts, Transfers, Ledger)
-│   │   ├── hooks/                   # React Query hooks (useApi)
-│   │   ├── types/                   # TypeScript API types
-│   │   └── utils/                   # Formatting, idempotency key generation
+│   │   ├── auth/                       # Keycloak JS adapter + AuthProvider
+│   │   ├── api/                        # API client (typed fetch + Bearer token)
+│   │   ├── components/                 # UI components (layout with logout, StatusBadge)
+│   │   ├── features/                   # Feature pages (Dashboard, Accounts, Transfers, Ledger)
+│   │   ├── hooks/                      # React Query hooks (useApi)
+│   │   ├── types/                      # TypeScript API types
+│   │   └── utils/                      # Formatting, idempotency key generation
 │   ├── package.json
-│   └── vite.config.ts               # Vite + Vitest + API/Keycloak proxy
-└── docker/                          # Docker Compose + observability
-    ├── docker-compose.yml           # Postgres, Kafka, Keycloak, Prometheus, Grafana
+│   └── vite.config.ts                  # Vite + Vitest + API/Keycloak proxy
+└── docker/                             # Docker Compose + observability
+    ├── docker-compose.yml              # Postgres, Kafka, Keycloak, Prometheus, Grafana
     ├── keycloak/
-    │   └── fintech-realm.json       # Pre-configured realm, clients, users, roles
+    │   └── fintech-realm.json          # Pre-configured realm, clients, users, roles
     ├── prometheus/prometheus.yml
     └── grafana/
-        ├── dashboards/              # Pre-provisioned Grafana dashboard JSON
-        └── provisioning/            # Datasource + dashboard provisioning
+        ├── dashboards/                 # Pre-provisioned Grafana dashboard JSON
+        └── provisioning/               # Datasource + dashboard provisioning
 ```
 
 ## Database Schema (Flyway Migrations)
 
-| Migration | Table | Purpose |
-|---|---|---|
+| Migration | Table / Change | Purpose |
+| --- | --- | --- |
 | V1 | `accounts` | Financial accounts with optimistic locking |
 | V2 | `transfers` | Transfer lifecycle with saga state |
 | V3 | `ledger_entries` | Double-entry accounting (immutable) |
@@ -331,17 +343,13 @@ token). To run (OAuth2 Login — the backend holds the token, browser
 | V5 | `audit_log` | Security audit trail (NIST AU-2) |
 | V6 | `accounts.owner_id`, `transfers.initiated_by` | JWT user binding |
 | V7 | `dead_letter_queue` | Failed Kafka messages for manual replay |
+| V8 | `accounts.iban` | ISO 13616 IBAN column + unique index |
+| V9 | `audit_log` triggers | PCI DSS §10.3.4 / §10.5.2 — UPDATE/DELETE/TRUNCATE rejected at DB level |
+| V10 | `audit_log` HMAC chain + `audit_log_head` | PCI DSS §10.5 / NIST AU-9(3) — per-row `prev_hash`, `row_hash`, `chain_seq` for tamper evidence |
+| V11 | `audit_log.key_id` + `active_key_id` | HMAC key rotation |
 
 ## Further Documentation
 
-| Document | Purpose |
-|---|---|
+| Document                       | Purpose                                                           |
+| ------------------------------ | ----------------------------------------------------------------- |
 | [`SECURITY.md`](./SECURITY.md) | Threat model, token handling, scope, reporting, known limitations |
-| V8 | `accounts.iban` | ISO 13616 IBAN column on accounts |
-| V9 | `audit_log` triggers | DB-level immutability (PCI DSS §10.3.4) |
-| V10 | `audit_log` chain cols | HMAC-SHA256 tamper-evident chain |
-| V11 | `audit_log.key_id` + `active_key_id` | HMAC key rotation |
-| V8 | `accounts.iban` | IBAN column + unique index |
-| V9 | `audit_log` triggers | PCI DSS §10.3.4 / §10.5.2 — UPDATE/DELETE/TRUNCATE rejected at DB level |
-| V10 | `audit_log` HMAC chain + `audit_log_head` | PCI DSS §10.5 / NIST AU-9(3) — per-row `prev_hash`, `row_hash`, `chain_seq` for tamper evidence |
-
