@@ -69,8 +69,8 @@ class JwtClaimTenantResolverTest {
     @Test
     @DisplayName("Falls back to azp when tenant_id and tid missing")
     void fallsBackToAzp() {
-        authenticateWith(Map.of("azp", "poc-fintech-bff"));
-        assertThat(resolver.resolveTenant(request)).isEqualTo("poc-fintech-bff");
+        authenticateWith(Map.of("azp", "poc-fintech-spa"));
+        assertThat(resolver.resolveTenant(request)).isEqualTo("poc-fintech-spa");
     }
 
     @Test

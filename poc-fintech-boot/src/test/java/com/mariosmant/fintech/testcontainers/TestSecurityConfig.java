@@ -73,7 +73,7 @@ public class TestSecurityConfig {
      * Uses a fixed user ID so ownership checks pass within a test session.
      *
      * <p>Claims mirror the hardened production validation contract
-     * ({@code JwtValidators}): {@code aud=poc-fintech-api}, {@code azp=poc-fintech-bff},
+     * ({@code JwtValidators}): {@code aud=poc-fintech-api}, {@code azp=poc-fintech-spa},
      * {@code typ=JWT} header, and a non-null {@code iat}. This keeps the mock
      * semantically aligned with the production decoder even though the test profile
      * bypasses the strict validator chain.</p>
@@ -95,7 +95,7 @@ public class TestSecurityConfig {
                             "preferred_username", "test-user",
                             "iss", "http://localhost:18180/realms/fintech",
                             "aud", List.of("poc-fintech-api"),
-                            "azp", "poc-fintech-bff",
+                            "azp", "poc-fintech-spa",
                             "realm_access", Map.of("roles", List.of("user"))
                     )
             );

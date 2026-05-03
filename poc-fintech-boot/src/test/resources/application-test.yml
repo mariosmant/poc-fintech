@@ -33,5 +33,5 @@ app:
       clock-skew-seconds: 60
       allowed-algorithms: RS256,PS256
       required-claims: sub,iat,exp
-      authorized-party: poc-fintech-bff
+      authorized-party: poc-fintech-spa
 

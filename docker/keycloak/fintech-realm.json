@@ -26,8 +26,8 @@
   },
   "clients": [
     {
-      "clientId": "poc-fintech-bff",
-      "name": "POC Fintech BFF Client",
+      "clientId": "poc-fintech-spa",
+      "name": "POC Fintech SPA Client (Resource-Server flow)",
       "enabled": true,
       "publicClient": true,
       "standardFlowEnabled": true,
@@ -374,7 +374,7 @@
   ],
   "scopeMappings": [
     {
-      "client": "poc-fintech-bff",
+      "client": "poc-fintech-spa",
       "roles": ["user"]
     }
   ]

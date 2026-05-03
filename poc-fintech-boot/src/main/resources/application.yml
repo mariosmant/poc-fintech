@@ -302,7 +302,7 @@ app:
       hmac-key-base64: ${AUDIT_CHAIN_HMAC_KEY:}
       keys: ${AUDIT_CHAIN_KEYS:}
       active-key-id: ${AUDIT_CHAIN_ACTIVE_KEY_ID:1}
-      authorized-party: poc-fintech-bff
+      authorized-party: poc-fintech-spa
 
 # ── Logging (MDC-enriched pattern with userId, requestId, traceId, spanId) ─
 # The default console pattern is developer-friendly. For production, activate

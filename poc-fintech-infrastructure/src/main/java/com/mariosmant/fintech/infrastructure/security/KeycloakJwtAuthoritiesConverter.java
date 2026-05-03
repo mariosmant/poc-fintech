@@ -43,7 +43,7 @@ public final class KeycloakJwtAuthoritiesConverter {
      * Keycloak client id whose {@code resource_access.<client>.roles} should be mapped.
      * Matches the realm-JSON client id used by the React SPA.
      */
-    public static final String CLIENT_ID = "poc-fintech-bff";
+    public static final String CLIENT_ID = "poc-fintech-spa";
 
     private KeycloakJwtAuthoritiesConverter() { /* utility */ }
 

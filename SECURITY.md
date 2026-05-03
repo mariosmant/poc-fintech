@@ -76,11 +76,11 @@ with a composite validator chain in `JwtValidators.strict(...)`:
 | **Audience** | At least one value in `aud` must match `app.security.jwt.audiences` | Confused-deputy (tokens minted for another API) |
 | **Clock skew** | Explicit 30 s (60 s in test) on `exp` / `nbf` — not unbounded | Stolen-token replay window |
 | **Required claims** | `sub`, `iat`, `exp` must be present and non-blank | Malformed / mint-anything tokens |
-| **`azp`** | Must equal `poc-fintech-bff` when set | Tokens minted by a different client |
+| **`azp`** | Must equal `poc-fintech-spa` when set | Tokens minted by a different client |
 | **`typ`** | Must be `JWT`, `at+jwt`, or absent | Accidental id_token misuse as access token |
 
 Keycloak emits `aud=poc-fintech-api` via an `audience` client scope
-(`oidc-audience-mapper`) attached as a default scope on `poc-fintech-bff`
+(`oidc-audience-mapper`) attached as a default scope on `poc-fintech-spa`
 (`docker/keycloak/fintech-realm.json`).
 
 ### Frontend
@@ -98,7 +98,7 @@ and `@EnableMethodSecurity` is active. Denials map to RFC 7807:
 * `401 Unauthorized` — no `Authentication` present.
 * `403 Forbidden` — authenticated but missing `ROLE_USER`.
 
-Role mapping from `realm_access.roles` and `resource_access.poc-fintech-bff.roles`
+Role mapping from `realm_access.roles` and `resource_access.poc-fintech-spa.roles`
 is centralised in `KeycloakJwtAuthoritiesConverter` and shared by both
 `SecurityConfig` (prod) and `TestSecurityConfig` (tests).
 
@@ -269,7 +269,7 @@ Retention), GDPR Art. 5(1)(e) (storage limitation).
    both behind `ROLE_ADMIN` or network-level ACLs.
    (`/actuator/auditchain` is already `hasRole("ADMIN")` in both
    `SecurityConfig` and `BffSecurityConfig`.)
-6. The realm ships **two** Keycloak clients: `poc-fintech-bff` (public,
+6. The realm ships **two** Keycloak clients: `poc-fintech-spa` (public,
    PKCE) for the Resource-Server flow and `poc-fintech-bff-server`
    (confidential, used by the `bff` profile). The committed confidential
    secret is a dev-only value (`poc-fintech-bff-dev-secret-change-me`) —
@@ -325,5 +325,5 @@ No formal certification is claimed or implied.
 ## See Also
 
 * [`README.md`](./README.md) — architecture overview, recruiter highlights, project structure, quick-start.
-* [`docker/keycloak/fintech-realm.json`](docker/keycloak/fintech-realm.json) — realm, clients (`poc-fintech-bff` public + `poc-fintech-bff-server` confidential), scopes, roles, audience mapper, password & lockout policy.
+* [`docker/keycloak/fintech-realm.json`](docker/keycloak/fintech-realm.json) — realm, clients (`poc-fintech-spa` public + `poc-fintech-bff-server` confidential), scopes, roles, audience mapper, password & lockout policy.
 * [`Dockerfile`](Dockerfile) + [`docker-bake.hcl`](docker-bake.hcl) — distroless multi-stage build with two profile-baked variants.

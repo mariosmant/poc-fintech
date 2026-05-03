@@ -28,7 +28,7 @@ class JwtValidatorsTest {
 
     private static final String ISSUER = "http://localhost:18180/realms/fintech";
     private static final String AUDIENCE = "poc-fintech-api";
-    private static final String AZP = "poc-fintech-bff";
+    private static final String AZP = "poc-fintech-spa";
 
     private static Jwt.Builder baseToken() {
         Instant now = Instant.now();

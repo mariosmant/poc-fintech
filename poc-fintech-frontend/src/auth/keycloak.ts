@@ -7,7 +7,7 @@ import Keycloak from 'keycloak-js';
 const keycloak = new Keycloak({
   url: 'http://localhost:8180',
   realm: 'fintech',
-  clientId: 'poc-fintech-bff',
+  clientId: 'poc-fintech-spa',
 });
 
 export default keycloak;

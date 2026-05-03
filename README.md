@@ -141,7 +141,7 @@ layer differs.
                                                           + JwtValidators chain
 ```
 
-- **Keycloak client**: `poc-fintech-bff` (public, PKCE S256).
+- **Keycloak client**: `poc-fintech-spa` (public, PKCE S256).
 - **Token storage**: in-memory only — `keycloak-js` keeps the access/refresh
   token in JS heap; **never** `localStorage` / `sessionStorage`.
 - **Token refresh**: `keycloak.updateToken(30)` every 30 s
@@ -230,7 +230,7 @@ Wait for Keycloak to be healthy (~30s). The `fintech` realm is auto-imported wit
   Passwords: `Alice123!@#$`, `Bob123!@#$xx`, `Admin123!@#$`
 - **Realm policy**: brute-force protection (lockout after 5 failures), `length(12) and upperCase(1) and lowerCase(1) and digits(1) and specialChars(1) and notUsername and passwordHistory(3)`
 - **Clients**:
-  - `poc-fintech-bff` — **public**, PKCE (S256). Used by the SPA in the default Resource-Server flow.
+  - `poc-fintech-spa` — **public**, PKCE (S256). Used by the SPA in the default Resource-Server flow.
   - `poc-fintech-bff-server` — **confidential**, used by the backend in the `bff` profile (Authorization Code + PKCE, server-held tokens).
 - **Audience mapping**: `audience` client-scope emits `aud=poc-fintech-api` so JwtValidators can enforce it.
 - **Keycloak Admin**: <http://localhost:8180> (`admin`/`admin`)
@@ -306,7 +306,7 @@ npm run dev
 
 ```bash
 TOKEN=$(curl -s -X POST http://localhost:8180/realms/fintech/protocol/openid-connect/token \
-  -d "client_id=poc-fintech-bff" \
+  -d "client_id=poc-fintech-spa" \
   -d "username=alice" \
   -d "password=Alice123!@#$" \
   -d "grant_type=password" | jq -r '.access_token')
